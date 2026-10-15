@@ -296,33 +296,18 @@ class _FlowClientBase(FlowFrontendMixin):
         existing_cookie_header: Optional[str],
         extra_cookies: Optional[Dict[str, Any]],
     ) -> Optional[str]:
-        cookie_items: Dict[str, str] = {}
         raw_existing = str(existing_cookie_header or "").strip()
-        if raw_existing:
-            for part in raw_existing.split(";"):
-                item = str(part or "").strip()
-                if not item or "=" not in item:
-                    continue
-                key, value = item.split("=", 1)
-                key = str(key or "").strip()
-                value = str(value or "").strip()
-                if key:
-                    cookie_items[key] = value
-
-        if isinstance(extra_cookies, dict):
-            for key, value in extra_cookies.items():
-                normalized_key = str(key or "").strip()
-                normalized_value = str(value or "").strip()
-                if (
-                    normalized_key
-                    and normalized_value
-                    and normalized_key not in cookie_items
-                ):
-                    cookie_items[normalized_key] = normalized_value
-
-        if not cookie_items:
+        # 同名 Cookie 可以来自不同域/路径，顺序由浏览器作用域决定，不能转成字典。
+        if not isinstance(extra_cookies, dict) or not extra_cookies:
             return raw_existing or None
-        return "; ".join(f"{key}={value}" for key, value in cookie_items.items())
+        items = [part.strip() for part in raw_existing.split(";") if part.strip()]
+        names = {part.split("=", 1)[0].strip() for part in items if "=" in part}
+        for key, value in extra_cookies.items():
+            name, cookie_value = str(key or "").strip(), str(value or "").strip()
+            if name and cookie_value and name not in names:
+                items.append(f"{name}={cookie_value}")
+                names.add(name)
+        return "; ".join(items) or None
 
     def _build_flow_project_page_url(self, project_id: str) -> str:
         return f"https://flow.google.com/project/{project_id}"

@@ -18,11 +18,12 @@ class ExtensionSyncError(ValueError):
         return {
             "success": False,
             "status_code": self.status_code,
-            "error": {"code": self.code, "message": str(self), "stage": self.stage},
+            "error": {"code": self.code, "message": str(self), "stage": self.stage,
+                      "diagnostic": getattr(self, "diagnostic", {})},
         }
 
 
-def classify_sync_failure(error, stage="session"):
+def _classify_sync_failure(error, stage="session"):
     """只按已知错误特征分类；不把上游响应、Cookie 或异常原文返回浏览器。"""
     text = str(error).lower()
     curl_code = getattr(error, "code", None)
@@ -62,6 +63,37 @@ def classify_sync_failure(error, stage="session"):
     )
 
 
+def classify_sync_failure(error, stage="session"):
+    failure = _classify_sync_failure(error, stage)
+    # 只提取固定枚举和数字，不保存异常原文、请求头或 Google 响应。
+    text = str(error)
+    diagnostic = {}
+    rpc = re.search(r"\brpc=(nzlxg|jHPbke)\b", text)
+    if rpc:
+        diagnostic.update(phase="rpc", rpc=rpc.group(1))
+    elif "bootstrap" in text.lower() or "登录态被重定向" in text:
+        diagnostic["phase"] = "bootstrap"
+    code = re.search(r"\bcode=(\d{1,3})\b", text)
+    if code:
+        diagnostic["rpc_code" if rpc else "http_status"] = int(code.group(1))
+    details = getattr(error, "gflow_diagnostic", {})
+    if isinstance(details, dict):
+        if details.get("phase") in ("bootstrap", "rpc"):
+            diagnostic["phase"] = details["phase"]
+        if details.get("reason") in ("redirect", "http_auth", "missing_metadata"):
+            diagnostic["reason"] = details["reason"]
+        if type(details.get("http_status")) is int and 100 <= details["http_status"] < 600:
+            diagnostic["http_status"] = details["http_status"]
+        for key in ("bootstrap_identity", "xsrf_present", "account_matches"):
+            if type(details.get(key)) is bool:
+                diagnostic[key] = details[key]
+        for key in ("rpc_cookie_count", "duplicate_cookie_names"):
+            if type(details.get(key)) is int and 0 <= details[key] <= 1000:
+                diagnostic[key] = details[key]
+    failure.diagnostic = diagnostic
+    return failure
+
+
 async def sync_extension_account(service, params):
     email = str(params.get("login_account") or "").strip().lower()
     if not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", email) or len(email) > 254:
@@ -80,15 +112,86 @@ async def sync_extension_account(service, params):
             code="gflow_incomplete_cookies",
         ) from None
     try:
-        if params.get("user_agent") and hasattr(service.flow_client, "_set_request_fingerprint"):
-            service.flow_client._set_request_fingerprint({"user_agent": params["user_agent"]})
         await service.initialize()
     except Exception as error:
         raise classify_sync_failure(error, "initialize") from None
+    # 初始化后再绑定浏览器特征，且在成功、失败和取消时都恢复上次上下文。
+    client = service.flow_client
+    setter = getattr(client, "_set_request_fingerprint", None)
+    getter = getattr(client, "get_request_fingerprint", None)
+    previous = getter() if callable(getter) else None
+    user_agent = str(params.get("user_agent") or "").strip()
+    if len(user_agent) > 512 or any(ord(ch) < 32 or ord(ch) == 127 for ch in user_agent):
+        raise ExtensionSyncError("浏览器请求特征无效，请更新登录助手后重试", code="gflow_invalid_browser")
+    frontend = params.get("frontend")
+    if frontend is not None:
+        if not isinstance(frontend, dict) or not all(isinstance(frontend.get(key), str) for key in ("bl", "sid", "at", "source_path")):
+            raise ExtensionSyncError("Flow 页面认证信息无效，请更新登录助手", code="gflow_invalid_browser")
+        if not (re.fullmatch(r"boq_labs-ai-sandbox-frontend_[A-Za-z0-9_.-]{1,100}", frontend["bl"])
+                and re.fullmatch(r"-?\d{1,32}", frontend["sid"])
+                and re.fullmatch(r"[A-Za-z0-9_:+/=.\-]{1,4096}", frontend["at"])
+                and re.fullmatch(r"/projects|/project/[a-fA-F0-9-]{36}", frontend["source_path"])):
+            raise ExtensionSyncError("Flow 页面认证信息无效，请更新登录助手", code="gflow_invalid_browser")
+    bound = bool(user_agent or frontend)
+    try:
+        if bound and callable(setter):
+            setter({**(previous or {}), **({"user_agent": user_agent} if user_agent else {}),
+                    "gflow_account_email": email, **({"gflow_frontend": dict(frontend)} if frontend else {})})
+        try:
+            return await _validate_and_save(service, email, session_token, cookies)
+        except ExtensionSyncError as failure:
+            # 浏览器诊断只是定位证据；绝不据此跳过后台校验或保存账号。
+            check = params.get("browser_check")
+            if isinstance(check, dict) and type(check.get("success")) is bool:
+                failure.diagnostic = getattr(failure, "diagnostic", {})
+                failure.diagnostic["browser_credit_ok"] = check["success"]
+                for key in ("http_status", "rpc_code"):
+                    value=check.get(key)
+                    if type(value) is int and 0 <= value < 600:
+                        failure.diagnostic["browser_" + key] = value
+                if check["success"] and failure.code == "gflow_google_auth_rejected":
+                    failure.args=("浏览器额度查询成功，但 GFlow 后台登录校验被 Google 拒绝（401）。账号尚未添加；需要继续检查浏览器与后台请求差异，无需反复登录。",)
+            if params.get("cookie_source") == "browser_request":
+                failure.diagnostic = getattr(failure, "diagnostic", {})
+                failure.diagnostic["observed_cookie_header"] = True
+            raise
+    finally:
+        if bound and callable(setter):
+            setter(previous)
+
+
+async def _validate_and_save(service, email, session_token, cookies):
     try:
         session = await service.flow_client.st_to_at(session_token, google_cookies=cookies)
     except Exception as error:
-        raise classify_sync_failure(error) from None
+        failure = classify_sync_failure(error)
+        refresh = getattr(service, "refresh_extension_login", None)
+        if failure.code != "gflow_google_auth_rejected" or not callable(refresh):
+            raise failure from None
+        # 只允许重试登录/额度读取；不重试新增账号或媒体生成。
+        try:
+            refreshed = await refresh(cookies, email)
+        except Exception as refresh_error:
+            raise classify_sync_failure(refresh_error) from None
+        if refreshed.get("success") is not True:
+            reason = str(refreshed.get("error") or "")
+            failure.diagnostic["cookie_refresh"] = (
+                "missing_identity" if "未返回已登录账号" in reason else
+                "account_mismatch" if "不一致" in reason else
+                "rejected"
+            )
+            raise failure from None
+        try:
+            session_token, cookies = normalize_account_input(
+                refreshed.get("session_token"), refreshed.get("google_cookies")
+            )
+            from src.services.browser_cookie_utils import validate_flow_cookie_storage
+            validate_flow_cookie_storage(cookies)
+            session = await service.flow_client.st_to_at(session_token, google_cookies=cookies)
+        except Exception as retry_error:
+            retry_failure = classify_sync_failure(retry_error)
+            retry_failure.diagnostic["cookie_refresh"] = "validated"
+            raise retry_failure from None
     observed_email = str((session.get("user") or {}).get("email") or "").strip().lower()
     if observed_email and observed_email != email:
         raise ExtensionSyncError(

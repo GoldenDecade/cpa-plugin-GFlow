@@ -167,6 +167,7 @@ class GFlowService:
             "active_tokens": len(active),
             "total_credits": total_credits,
             "extension_sync": getattr(self, "last_extension_sync", None),
+            "sync_revision": "20261016.5",
         }
 
     async def handle_list_tokens(self, _params: Dict[str, Any]) -> Dict[str, Any]:
@@ -234,6 +235,14 @@ class GFlowService:
             sys.stderr.write(f"[GFlowService] Warning: credit refresh failed on add: {e}\n")
 
         return {"success": True, "token_id": new_token.id}
+
+    async def refresh_extension_login(self, cookies, email):
+        from src.services.protocol_login import protocol_loginer
+        proxy = await self.proxy_manager.get_request_proxy_url()
+        return await protocol_loginer.login(
+            cookies, proxy=proxy, email=email,
+            user_agent=self.flow_client._get_effective_request_user_agent(),
+        )
 
     async def handle_extension_sync(self, params: Dict[str, Any]) -> Dict[str, Any]:
         from extension_sync import ExtensionSyncError, sync_extension_account

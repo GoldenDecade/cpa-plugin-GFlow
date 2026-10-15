@@ -1,4 +1,7 @@
 // popup.js - GFlow 登录助手配置界面交互
+let paired = false;
+let savedApiUrl = '';
+
 function field(id) { return document.getElementById(id); }
 
 function showStatus(text, type = 'info') {
@@ -11,14 +14,20 @@ function busy(val) {
   field('saveAndSyncBtn').disabled = val;
   field('saveOnlyBtn').disabled = val;
   field('quickFillBtn').disabled = val;
+  field('forgetBtn').disabled = val;
 }
 
 async function sendMsg(action, config) {
   const resp = await chrome.runtime.sendMessage({ action, config });
-  if (!resp?.ok && !resp?.success) {
+  if (resp?.ok !== true) {
     throw new Error(resp?.message || resp?.error || '无法与 GFlow 扩展后台建立通信');
   }
-  return resp.result || resp;
+  const result = resp.result ?? resp;
+  // ok 表示消息送达；只有 success === true 才能表示业务同步成功。
+  if (action === 'sync' && result?.success !== true) {
+    throw new Error(result?.message || 'GFlow 同步失败，请查看同步日志');
+  }
+  return result;
 }
 
 function parseAndFillConfig(rawText) {
@@ -26,9 +35,11 @@ function parseAndFillConfig(rawText) {
   if (!text) return false;
   try {
     const data = JSON.parse(text);
-    if (data.apiUrl) field('apiUrl').value = data.apiUrl;
-    if (data.connectionToken) field('connectionToken').value = data.connectionToken;
-    if (data.loginAccount) field('email').value = data.loginAccount;
+    const connection = validateConnection(data);
+    const email = data.loginAccount ? validateEmail(data.loginAccount) : '';
+    field('apiUrl').value = connection.apiUrl;
+    field('connectionToken').value = connection.connectionToken;
+    if (email) field('email').value = email;
     return true;
   } catch (_) {
     return false;
@@ -36,20 +47,43 @@ function parseAndFillConfig(rawText) {
 }
 
 function renderState(state) {
-  const isPaired = Boolean(state.configured);
+  paired = state.configured === true;
+  savedApiUrl = state.apiUrl || '';
+  field('connectionToken').required = !paired;
+  field('connectionToken').placeholder = paired ? '已保存；留空沿用，无需再次填写' : '粘贴配置后自动填入';
+  const isPaired = paired;
   if (state.apiUrl) field('apiUrl').value = state.apiUrl;
   if (state.loginAccount) field('email').value = state.loginAccount;
   if (state.autoSync !== undefined) field('autoSync').checked = Boolean(state.autoSync);
   
   if (state.lastSync) {
     const d = new Date(state.lastSync.timestamp);
+    const succeeded = state.lastSync.success === true;
     const timeStr = Number.isNaN(d.getTime()) ? '' : d.toLocaleTimeString();
-    showStatus(`${state.lastSync.success ? '✅ 同步成功' : '❌ 同步失败'} (${timeStr})\n${state.lastSync.message || ''}`, state.lastSync.success ? 'success' : 'error');
+    showStatus(`${succeeded ? '同步成功' : '同步失败'} (${timeStr})\n${state.lastSync.message || ''}`, succeeded ? 'success' : 'error');
   } else if (isPaired) {
     showStatus('已配置本机连接，登录 Flow 后点击“保存并立即同步”。', 'info');
   } else {
     showStatus('请从 GFlow 页面点击“复制扩展配置”，粘贴到此处即可。', 'info');
   }
+}
+
+async function saveFromForm() {
+  const apiUrl = field('apiUrl').value.trim();
+  const connectionToken = field('connectionToken').value.trim();
+  const loginAccount = validateEmail(field('email').value);
+  const autoSync = field('autoSync').checked;
+  let connection;
+  if (connectionToken) {
+    connection = validateConnection({ product: 'GFlow', apiUrl, connectionToken });
+    const granted = await chrome.permissions.request({ origins: [connectionPermission(connection.apiUrl)] });
+    if (!granted) throw new Error('需要授权扩展连接本机 GFlow');
+  } else if (!paired || apiUrl !== savedApiUrl) {
+    throw new Error('请从 GFlow 复制扩展配置并粘贴到快捷导入框');
+  }
+  const state = await sendMsg('save', { connection, loginAccount, autoSync });
+  renderState(state);
+  field('connectionToken').value = '';
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
@@ -89,17 +123,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     busy(true);
     showStatus('正在连接 GFlow 后台并同步登录态...', 'info');
     try {
-      const apiUrl = field('apiUrl').value.trim();
-      const connectionToken = field('connectionToken').value.trim();
-      const loginAccount = validateEmail(field('email').value);
-      const autoSync = field('autoSync').checked;
+      await saveFromForm();
 
-      const connection = validateConnection({ product: 'GFlow', apiUrl, connectionToken });
-      await chrome.permissions.request({ origins: [connectionPermission(connection.apiUrl)] });
-      await sendMsg('save', { connection, loginAccount, autoSync });
-
+      showStatus('正在同步登录态…', 'info');
       const syncResult = await sendMsg('sync');
-      showStatus(`✅ 同步成功！${syncResult.message || ''}`, 'success');
+      showStatus(`同步成功：${syncResult.message || ''}`, 'success');
     } catch (err) {
       showStatus(err.message, 'error');
     } finally {
@@ -111,14 +139,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   field('saveOnlyBtn').addEventListener('click', async () => {
     busy(true);
     try {
-      const apiUrl = field('apiUrl').value.trim();
-      const connectionToken = field('connectionToken').value.trim();
-      const loginAccount = validateEmail(field('email').value);
-      const autoSync = field('autoSync').checked;
-
-      const connection = validateConnection({ product: 'GFlow', apiUrl, connectionToken });
-      await chrome.permissions.request({ origins: [connectionPermission(connection.apiUrl)] });
-      await sendMsg('save', { connection, loginAccount, autoSync });
+      await saveFromForm();
       showStatus('配置已保存成功。', 'success');
     } catch (err) {
       showStatus(err.message, 'error');
@@ -139,6 +160,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       const state = await sendMsg('forget');
       renderState(state);
       field('connectionToken').value = '';
+      field('apiUrl').value = '';
+      field('email').value = '';
       showStatus('配置已清除。', 'info');
     } catch (err) {
       showStatus(err.message, 'error');

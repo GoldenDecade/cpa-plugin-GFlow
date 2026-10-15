@@ -78,12 +78,18 @@ function serializeCookieStorage(cookies) {
 
 function serializeFlowCookies(cookies) {
   const deduped = deduplicateCookies(cookies);
+  const targets = [new URL('https://flow.google.com/projects'), new URL('https://flow.google.com/_/AiSandboxAngularFrontend/data/batchexecute')];
   const selected = deduped.filter(cookie => {
     const domain = normalizeCookieDomain(cookie.domain);
-    const isGoogle = domain === 'google.com' || domain.endsWith('.google.com');
-    if (!isGoogle) return false;
+    if (cookie.partitionKey || cookie.partitionKeyOpaque) return false;
+    if (cookie.expirationDate && cookie.expirationDate <= Date.now() / 1000) return false;
     const path = cookie.path || '/';
-    return !path || path === '/' || path.startsWith('/projects') || '/projects'.startsWith(path.endsWith('/') ? path : path + '/');
+    return targets.some(target => {
+      const hostMatches = cookie.hostOnly ? target.hostname === domain
+        : target.hostname === domain || target.hostname.endsWith('.' + domain);
+      const pathMatches = target.pathname === path || target.pathname.startsWith(path.endsWith('/') ? path : path + '/');
+      return hostMatches && pathMatches;
+    });
   });
   const names = new Set(selected.map(cookie => cookie.name));
   if (!['OSID', '__Secure-OSID'].some(name => names.has(name))

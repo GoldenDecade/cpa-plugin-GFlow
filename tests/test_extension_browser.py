@@ -28,7 +28,7 @@ const context = vm.createContext({
     tabs: { async query() { return [{ id: 42 }]; } },
     cookies: { async getAllCookieStores() { return [{ id: "profile-test", tabIds: [42] }]; },
       async getAll(request) {
-      assert.equal(request.url, 'https://flow.google.com/projects');
+      assert.ok(['https://flow.google.com/projects', 'https://flow.google.com/_/AiSandboxAngularFrontend/data/batchexecute'].includes(request.url));
       assert.equal(request.storeId, "profile-test"); cookieReads++;
       return [
         { name:'SID', value:'fake-google', domain:'.google.com', path:'/' },
@@ -68,7 +68,7 @@ vm.runInContext(BACKGROUND, context);
   const results = await Promise.all([context.syncNow(),context.syncNow()]);
   assert.equal(uploads,1);
   assert.ok(results.every(result => result.success));
-  assert.equal(cookieReads,1);
+  assert.equal(cookieReads,2);
   assert.ok(!JSON.stringify(saved.lastSync).includes('fake-management'));
   assert.ok(!JSON.stringify(saved.lastSync).includes('fake-google'));
   console.log('PASS concurrent sync uses one request and only matching Flow cookies');
@@ -91,6 +91,11 @@ vm.runInContext(BACKGROUND, context);
   const privateError=await context.syncNow();
   assert.ok(!privateError.message.includes("do-not-echo"));
   console.log("PASS server diagnostics are displayed without accepting false success or leaking cookies");
+  const envelope = await new Promise(resolve => listeners.message({action:'sync'}, {id:'gflow-test'}, resolve));
+  assert.equal(envelope.ok, true);
+  assert.equal(envelope.success, false);
+  assert.equal(envelope.result.success, false);
+  assert.ok(!JSON.stringify(saved.logs).includes('example@example.test'));
   assert.equal(listeners.message({action:'sync'},{id:'another-extension'},()=>{}),false);
   console.log('PASS messages from other extensions are ignored');
 })().catch(error => { console.error(error); process.exitCode=1; });
