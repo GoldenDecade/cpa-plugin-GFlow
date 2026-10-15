@@ -282,20 +282,59 @@ class GFlowService:
         return {"success": True}
 
     async def handle_list_models(self, _params: Dict[str, Any]) -> Dict[str, Any]:
-        from src.services.generation_handler import MODEL_CONFIG
-        models = []
-        for model_id, cfg in MODEL_CONFIG.items():
-            if not cfg.get("listed", True):
-                continue
-            m_type = cfg.get("type", "unknown")
-            desc = cfg.get("description", f"Google Flow {m_type}: {model_id}")
-            models.append({
-                "id": f"gflow-{model_id}",
-                "original_id": model_id,
-                "type": m_type,
-                "description": desc,
-            })
-        return {"models": models}
+        return {
+            "models": [
+                {
+                    "id": "gflow-nano-banana-pro",
+                    "original_id": "nano-banana-pro",
+                    "type": "image",
+                    "display_name": "Nano Banana Pro",
+                    "description": "Google Flow 图片生成 - Nano Banana Pro (GEM_PIX_2)",
+                },
+                {
+                    "id": "gflow-nano-banana-2-lite",
+                    "original_id": "nano-banana-2-lite",
+                    "type": "image",
+                    "display_name": "Nano Banana 2 Lite",
+                    "description": "Google Flow 图片生成 - Nano Banana 2 Lite (HARBOR_SEAL)",
+                },
+                {
+                    "id": "gflow-nano-banana-2.1",
+                    "original_id": "nano-banana-2.1",
+                    "type": "image",
+                    "display_name": "Nano Banana 2.1",
+                    "description": "Google Flow 图片生成 - Nano Banana 2.1 (BELUGA)",
+                },
+                {
+                    "id": "gflow-omni-1.1-flash",
+                    "original_id": "omni-1.1-flash",
+                    "type": "video",
+                    "display_name": "Omni 1.1 Flash",
+                    "description": "Google Flow 视频生成 - Omni 1.1 Flash (文生/参考图视频)",
+                },
+                {
+                    "id": "gflow-veo-3.1-lite",
+                    "original_id": "veo-3.1-lite",
+                    "type": "video",
+                    "display_name": "Veo 3.1 - Lite",
+                    "description": "Google Flow 视频生成 - Veo 3.1 Lite (文生视频)",
+                },
+                {
+                    "id": "gflow-veo-3.1-fast",
+                    "original_id": "veo-3.1-fast",
+                    "type": "video",
+                    "display_name": "Veo 3.1 - Fast",
+                    "description": "Google Flow 视频生成 - Veo 3.1 Fast (文生视频)",
+                },
+                {
+                    "id": "gflow-veo-3.1-quality",
+                    "original_id": "veo-3.1-quality",
+                    "type": "video",
+                    "display_name": "Veo 3.1 - Quality",
+                    "description": "Google Flow 视频生成 - Veo 3.1 Quality (文生视频)",
+                },
+            ]
+        }
 
     async def handle_chat_completion(self, req_id: str, params: Dict[str, Any]):
         await self.initialize()

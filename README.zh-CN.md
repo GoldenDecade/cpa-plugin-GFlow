@@ -15,6 +15,22 @@ EasyCPA 内嵌窗口限制直接下载和新窗口跳转，因此下载和源码
 - [扩展 GitHub 与安装说明](https://github.com/daodeqing/cpa-plugin-GFlow/tree/main/browser-extension)
 - [直接下载 GFlow 登录助手 ZIP](https://github.com/daodeqing/cpa-plugin-GFlow/raw/refs/heads/main/downloads/GFlow-browser-extension.zip)
 
+## 支持的模型
+
+适配 Google Flow 官方最新的 7 个核心模型，无需手动选择繁琐的比例与分辨率变体后缀：
+
+- **图片生成 (Nano Banana 系列)**：
+  - `gflow-nano-banana-pro` (Nano Banana Pro)
+  - `gflow-nano-banana-2-lite` (Nano Banana 2 Lite)
+  - `gflow-nano-banana-2.1` (Nano Banana 2.1)
+- **视频生成 (Veo 3.1 & Omni 系列)**：
+  - `gflow-omni-1.1-flash` (Omni 1.1 Flash，支持文生视频与参考图)
+  - `gflow-veo-3.1-lite` (Veo 3.1 - Lite)
+  - `gflow-veo-3.1-fast` (Veo 3.1 - Fast)
+  - `gflow-veo-3.1-quality` (Veo 3.1 - Quality)
+
+调用时可通过参数指定比例与画质（如 `aspectRatio: "16:9"`、OpenAI `size`），同时兼容 `gflow-gemini-3.1-flash-image` 等调用名称。
+
 ## 也可以手动粘贴
 
 GFlow → 添加账号 → “方式二：手动粘贴”。复制完整 Cookie 或 Cookie JSON，也接受 Session Token；新版 Flow 若没有旧 Token 字段，请优先用扩展。展开输入框下方的帮助可查看 F12 获取步骤。

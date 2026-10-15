@@ -259,7 +259,7 @@ fn handle_model_static(_req: &[u8]) -> Result<Vec<u8>, String> {
     if let Some(arr) = worker_models.get("models").and_then(|m| m.as_array()) {
         for m in arr {
             let id = m.get("id").and_then(|s| s.as_str()).unwrap_or("");
-            let desc = m.get("description").and_then(|s| s.as_str()).unwrap_or("");
+            let desc = m.get("display_name").or_else(|| m.get("DisplayName")).or_else(|| m.get("description")).and_then(|s| s.as_str()).unwrap_or("");
             if !id.is_empty() {
                 models_list.push(serde_json::json!({
                     "ID": id,
@@ -277,13 +277,13 @@ fn handle_model_static(_req: &[u8]) -> Result<Vec<u8>, String> {
     if models_list.is_empty() {
         // Fallback default catalog
         let defaults = [
-            ("gflow-gemini-3.1-flash-image-landscape", "Nano Banana 2.1 (16:9 横屏)"),
-            ("gflow-gemini-3.1-flash-image-portrait", "Nano Banana 2.1 (9:16 竖屏)"),
-            ("gflow-gemini-3.1-flash-image-square", "Nano Banana 2.1 (1:1 方图)"),
-            ("gflow-veo-3.1-fast-8s-landscape", "Veo 3.1 Fast (8s 横屏视频)"),
-            ("gflow-veo-3.1-fast-8s-portrait", "Veo 3.1 Fast (8s 竖屏视频)"),
-            ("gflow-veo-3.1-lite", "Veo 3.1 Lite (8s 横屏视频)"),
-            ("gflow-omni-1.1-flash", "Omni 1.1 Flash (图生视频/参考图)"),
+            ("gflow-nano-banana-pro", "Nano Banana Pro"),
+            ("gflow-nano-banana-2-lite", "Nano Banana 2 Lite"),
+            ("gflow-nano-banana-2.1", "Nano Banana 2.1"),
+            ("gflow-omni-1.1-flash", "Omni 1.1 Flash"),
+            ("gflow-veo-3.1-lite", "Veo 3.1 - Lite"),
+            ("gflow-veo-3.1-fast", "Veo 3.1 - Fast"),
+            ("gflow-veo-3.1-quality", "Veo 3.1 - Quality"),
         ];
         for (id, desc) in defaults {
             models_list.push(serde_json::json!({
@@ -313,7 +313,9 @@ fn handle_model_route(req: &[u8]) -> Result<Vec<u8>, String> {
     let requested_model = req_val.get("RequestedModel").and_then(|m| m.as_str()).unwrap_or("");
 
     let should_handle = requested_model.starts_with("gflow-")
+        || requested_model.starts_with("nano-banana")
         || requested_model.starts_with("veo-")
+        || requested_model.starts_with("omni-")
         || (requested_model.starts_with("gemini-3.") && requested_model.contains("-image"));
 
     let out = if should_handle {

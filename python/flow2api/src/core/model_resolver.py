@@ -21,7 +21,15 @@ from ..core.logger import debug_logger
 # ──────────────────────────────────────────────
 IMAGE_BASE_MODELS = {
     # Gemini 3.0 Pro (GEM_PIX_2)
+   # Nano Banana Pro (GEM_PIX_2)
+    "nano-banana-pro": "gemini-3.0-pro-image",
     "gemini-3.0-pro-image": "gemini-3.0-pro-image",
+    # Nano Banana 2 Lite (HARBOR_SEAL)
+    "nano-banana-2-lite": "gemini-3.1-flash-lite-image",
+    "nano-banana-2.0-lite": "gemini-3.1-flash-lite-image",
+    # Nano Banana 2.1 (BELEQA)
+    "nano-banana-2.1": "gemini-3.1-flash-image",
+    "nano-banana": "gemini-3.1-flash-image",
     # Nano Banana 2.1, with the existing Gemini 3.1 alias retained.
     "gemini-3.1-flash-image": "gemini-3.1-flash-image",
     "gemini-3.1-flash-lite-image": "gemini-3.1-flash-lite-image",

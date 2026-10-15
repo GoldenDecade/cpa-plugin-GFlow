@@ -10,6 +10,8 @@ import psutil
 
 ROOT = Path(__file__).resolve().parents[1]
 DLL = ROOT / "target" / "release" / "gflow.dll"
+if not DLL.exists():
+    DLL = Path("D:/LUO/proxyAPI/EasyCLIProxyAPI-v0.2.96-Windows-amd64/cpa-core/plugins/windows/amd64/gflow-v0.1.0.dll")
 
 
 class Buffer(c.Structure):
