@@ -22,6 +22,10 @@ if hasattr(sys.stderr, "reconfigure"):
 if hasattr(sys.stdin, "reconfigure"):
     sys.stdin.reconfigure(encoding="utf-8", errors="replace")
 
+# Save dedicated RPC stdout before redirecting sys.stdout to sys.stderr
+_rpc_stdout = sys.stdout
+sys.stdout = sys.stderr
+
 # Ensure flow2api package is in sys.path
 base_dir = Path(__file__).resolve().parent
 flow_pkg = base_dir / "flow2api"
@@ -111,8 +115,8 @@ class GFlowService:
 
     def send_line(self, data: Dict[str, Any]):
         out = json.dumps(data, ensure_ascii=False)
-        sys.stdout.write(out + "\n")
-        sys.stdout.flush()
+        _rpc_stdout.write(out + "\n")
+        _rpc_stdout.flush()
 
     async def handle_ping(self, _params: Dict[str, Any]) -> Dict[str, Any]:
         return {"pong": True}
@@ -239,10 +243,10 @@ class GFlowService:
             },
             "proxy": {
                 "enabled": proxy_cfg.enabled if proxy_cfg else False,
-                "url": proxy_cfg.url if proxy_cfg else "",
+                "url": getattr(proxy_cfg, "proxy_url", "") if proxy_cfg else "",
             },
             "call_logic": {
-                "mode": call_cfg.mode if call_cfg else "polling",
+                "mode": getattr(call_cfg, "call_mode", "polling") if call_cfg else "polling",
             },
             "cache": {
                 "timeout": cache_cfg.cache_timeout if cache_cfg else 7200,

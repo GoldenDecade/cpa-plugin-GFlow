@@ -59,36 +59,76 @@ impl WorkerManager {
 
     pub fn execute(&self, cmd: &str, params: serde_json::Value) -> Result<serde_json::Value, String> {
         let mut lock = self.inner.lock().map_err(|e| e.to_string())?;
-        lock.ensure_started()?;
+        let mut last_err = String::new();
 
-        let req_id = format!("req_{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos());
-        let msg = serde_json::json!({
-            "id": req_id,
-            "cmd": cmd,
-            "params": params,
-        });
+        for _ in 0..2 {
+            if let Err(e) = lock.ensure_started() {
+                last_err = e;
+                continue;
+            }
 
-        let mut line = serde_json::to_string(&msg).map_err(|e| e.to_string())?;
-        line.push('\n');
+            let req_id = format!("req_{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos());
+            let msg = serde_json::json!({
+                "id": req_id,
+                "cmd": cmd,
+                "params": params,
+            });
 
-        let stdin = lock.stdin.as_mut().ok_or_else(|| "Worker stdin unavailable".to_string())?;
-        stdin.write_all(line.as_bytes()).map_err(|e| e.to_string())?;
-        stdin.flush().map_err(|e| e.to_string())?;
+            let mut line = match serde_json::to_string(&msg) {
+                Ok(l) => l,
+                Err(e) => return Err(e.to_string()),
+            };
+            line.push('\n');
 
-        let reader = lock.reader.as_mut().ok_or_else(|| "Worker stdout unavailable".to_string())?;
-        let mut resp_line = String::new();
-        reader.read_line(&mut resp_line).map_err(|e| e.to_string())?;
+            let write_res = if let Some(stdin) = lock.stdin.as_mut() {
+                stdin.write_all(line.as_bytes()).and_then(|_| stdin.flush())
+            } else {
+                Err(std::io::Error::new(std::io::ErrorKind::BrokenPipe, "stdin is None"))
+            };
 
-        let parsed: serde_json::Value = serde_json::from_str(resp_line.trim()).map_err(|e| {
-            format!("Failed to parse worker response: {e}; raw: {resp_line}")
-        })?;
+            if let Err(e) = write_res {
+                last_err = e.to_string();
+                lock.stop();
+                continue;
+            }
 
-        if let Some(err) = parsed.get("error") {
-            let msg = err.get("message").and_then(|m| m.as_str()).unwrap_or("Worker error");
-            return Err(msg.to_string());
+            let mut resp_line = String::new();
+            let read_res = if let Some(reader) = lock.reader.as_mut() {
+                reader.read_line(&mut resp_line)
+            } else {
+                Err(std::io::Error::new(std::io::ErrorKind::BrokenPipe, "reader is None"))
+            };
+
+            if let Err(e) = read_res {
+                last_err = e.to_string();
+                lock.stop();
+                continue;
+            }
+
+            if resp_line.trim().is_empty() {
+                last_err = "Worker returned empty output".to_string();
+                lock.stop();
+                continue;
+            }
+
+            let parsed: serde_json::Value = match serde_json::from_str(resp_line.trim()) {
+                Ok(v) => v,
+                Err(e) => {
+                    last_err = format!("Failed to parse worker response: {e}; raw: {resp_line}");
+                    lock.stop();
+                    continue;
+                }
+            };
+
+            if let Some(err) = parsed.get("error") {
+                let msg = err.get("message").and_then(|m| m.as_str()).unwrap_or("Worker error");
+                return Err(msg.to_string());
+            }
+
+            return Ok(parsed.get("result").cloned().unwrap_or(serde_json::Value::Null));
         }
 
-        Ok(parsed.get("result").cloned().unwrap_or(serde_json::Value::Null))
+        Err(format!("Worker command {cmd} failed after retries: {last_err}"))
     }
 
     pub fn execute_stream<F>(&self, params: serde_json::Value, mut on_chunk: F) -> Result<(), String>
@@ -149,8 +189,12 @@ impl WorkerManager {
 
 impl WorkerInner {
     fn ensure_started(&mut self) -> Result<(), String> {
-        if self.child.is_some() {
-            return Ok(());
+        if let Some(child) = self.child.as_mut() {
+            if let Ok(Some(_)) = child.try_wait() {
+                self.stop();
+            } else {
+                return Ok(());
+            }
         }
 
         let python = self.resolve_python();
