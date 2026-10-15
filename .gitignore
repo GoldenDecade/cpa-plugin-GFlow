@@ -1,0 +1,11 @@
+target/
+dist/
+*.zip
+*.sha256
+__pycache__/
+*.pyc
+data/
+data_test/
+*.dll
+*.dylib
+*.so

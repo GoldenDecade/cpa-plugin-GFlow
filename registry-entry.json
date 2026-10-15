@@ -1,0 +1,17 @@
+{
+  "id": "gflow",
+  "name": "GFlow (Google Flow & Veo 模型接入)",
+  "description": "Google Flow 图像 (Nano Banana 2.1) 与视频 (Veo 3.1) 统一接口，支持多账号池轮询调度与额度管理。 / Google Flow image & Veo 3.1 video integration with account pool rotation and quota management.",
+  "author": "daodeqing",
+  "repository": "https://github.com/daodeqing/cpa-plugin-GFlow",
+  "homepage": "https://github.com/daodeqing/cpa-plugin-GFlow",
+  "license": "MIT",
+  "tags": [
+    "Model",
+    "Video",
+    "Image",
+    "Google Flow",
+    "Veo",
+    "Nano Banana"
+  ]
+}
