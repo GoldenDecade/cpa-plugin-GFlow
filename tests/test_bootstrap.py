@@ -2,8 +2,10 @@
 import base64
 import ctypes as c
 import json
+import io
 from pathlib import Path
 import unittest
+import zipfile
 import psutil
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -82,6 +84,15 @@ class BootstrapTest(unittest.TestCase):
     def test_menu_contains_ticket_not_management_key(self):
         self.assertGreaterEqual(len(self.nonce), 40)
         self.assertNotIn("synthetic-management-key", self.menu)
+
+    def test_extension_download_contains_independent_gflow_manifest(self):
+        result = self.resource("extension.zip")
+        self.assertEqual(result["StatusCode"], 200)
+        with zipfile.ZipFile(io.BytesIO(result["decoded"])) as archive:
+            manifest = json.loads(archive.read("manifest.json"))
+            self.assertEqual(manifest["name"], "GFlow 登录助手")
+            self.assertIn("background.js", archive.namelist())
+            self.assertNotIn(b"synthetic-management-key", archive.read("popup.js"))
 
     def test_missing_and_invalid_ticket_are_rejected(self):
         for headers in [{}, {"X-GFlow-Session": "incorrect"}]:

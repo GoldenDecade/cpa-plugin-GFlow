@@ -437,27 +437,41 @@
   <div id="add-modal" class="modal-overlay" style="display:none;">
     <div class="modal-content">
       <div class="modal-header">
-        <div class="modal-title">添加 Google Flow 账号</div>
+        <div class="modal-title">添加 GFlow 账号</div>
         <button class="btn btn-secondary btn-sm" onclick="closeAddTokenModal()">✕</button>
       </div>
+      <section style="padding:14px;border:1px solid var(--border);border-radius:8px;margin-bottom:18px;">
+        <strong>方式一：浏览器自动同步（推荐）</strong>
+        <p class="form-desc">GFlow 登录助手 · 免费扩展，不用 F12 找 Cookie。</p>
+        <p style="display:flex;flex-wrap:wrap;gap:8px;margin:12px 0;">
+          <a class="btn btn-secondary btn-sm" href="/v0/resource/plugins/gflow/extension.zip" download>下载 GFlow 扩展</a>
+          <button class="btn btn-primary btn-sm" type="button" onclick="copyExtensionConfig()">复制扩展配置</button>
+          <a class="btn btn-secondary btn-sm" href="https://github.com/daodeqing/cpa-plugin-GFlow/tree/main/browser-extension" target="_blank" rel="noopener noreferrer">扩展 GitHub</a>
+        </p>
+        <ol class="form-desc" style="padding-left:20px;line-height:1.8;">
+          <li>解压扩展，在 Chrome / Edge 扩展管理页开启“开发者模式”，点击“加载已解压的扩展程序”。</li>
+          <li>点击上方“复制扩展配置”，在“GFlow 登录助手”中粘贴，填写当前 Google 邮箱。</li>
+          <li>在同一个浏览器登录 <a href="https://flow.google.com/projects" target="_blank" rel="noopener noreferrer">Google Flow</a>，点击扩展的“保存并同步”，回到这里刷新账号列表。</li>
+        </ol>
+        <p class="form-desc">首次配置一次；之后可一键同步或每 60 分钟自动同步。配置包含管理凭据，请仅粘贴到 GFlow 登录助手，不要分享。</p>
+      </section>
       <div class="form-group">
-        <label class="form-label" for="token-cookies">Google / Flow Cookies 或 Session Token (st)</label>
-        <textarea id="token-cookies" class="form-textarea" aria-describedby="cookie-help" placeholder="粘贴完整 Cookie 请求头、Cookie JSON，或 Session Token 的 Value"></textarea>
-        <div class="form-desc">必须使用你本人有权使用的已登录账号。添加时会验证登录态、查询初始额度，并可能创建项目；不会自动生成图片或视频。</div>
-        <details id="cookie-help" class="form-desc" open style="margin-top:12px;line-height:1.8;">
-          <summary style="cursor:pointer;font-weight:600;color:var(--text);">如何获取 Cookie / Session Token？</summary>
-          <p><strong>推荐：复制完整 Cookie</strong></p>
+        <strong>方式二：手动粘贴</strong>
+        <label class="form-label" for="token-cookies" style="margin-top:8px;">Cookie / Session Token</label>
+        <textarea id="token-cookies" class="form-textarea" aria-describedby="cookie-help" placeholder="已有 Cookie 或 Session Token？直接粘贴在这里。"></textarea>
+        <details id="cookie-help" class="form-desc" style="margin-top:8px;line-height:1.8;">
+          <summary style="cursor:pointer;">如何获取 Cookie / Session Token？</summary>
           <ol style="padding-left:20px;">
-            <li>用 Chrome 或 Edge 打开 <a href="https://flow.google.com/" target="_blank" rel="noopener noreferrer">Google Flow</a>，登录你的 Google 账号，确认能进入 Flow。</li>
-            <li>按 F12（笔记本可能需要 Fn + F12），选择“网络 / Network”，再刷新 Flow 页面。</li>
-            <li>选择发往当前 Flow 网站的请求，在“标头 / Headers → 请求标头 / Request Headers”中找到 <code>Cookie</code>。只复制它的值，例如 <code>SID=…; __Secure-OSID=…; …</code>，粘贴到上方。不要复制响应中的 <code>Set-Cookie</code> 或整段请求报文。</li>
-            <li>如果该请求看不到 Cookie，换一个当前已登录 Flow 页面发出的同站请求。可查看“应用 / Application → 存储 / Storage → Cookies”，核对当前 Flow 域名下是否已有登录 Cookie；不要导出整个浏览器的所有网站 Cookie。</li>
+            <li>登录 Google Flow，按 F12 → Network，勾选 Disable cache 后刷新。</li>
+            <li>点击发往当前 Flow 网站的请求，在 Headers → Request Headers 中复制 Cookie 的值，粘贴到上方。</li>
           </ol>
-          <p><strong>已有 Session Token 时：</strong>在“应用 / Application → Cookies”中寻找 <code>__Secure-next-auth.session-token</code> 或 <code>next-auth.session-token</code>，仅复制对应的 <code>Value</code>。部分新版 Flow 不再提供这个字段，找不到时使用上面的完整 Cookie 方式，不要随便选其他字段代替。</p>
-          <p><strong>支持的粘贴格式：</strong>完整 Cookie 字符串、Cookie 对象数组 JSON、包含 <code>st</code> / <code>google_cookies</code> 的 JSON，或单独的 Session Token 值。仅 ST 的方式受账号和 Flow 当前登录机制影响，完整 Cookie 通常包含更多必要登录信息。</p>
-          <p><strong>登录过期：</strong>先在浏览器重新登录，再复制最新 Cookie 更新账号。Cookie 相当于登录凭据，不要发到聊天、截图、GitHub 或第三方网站。</p>
+          <p>若看到“Provisional headers”，换一条实际已完成的请求。不要复制 Set-Cookie。Application → Cookies 中若存在 <code>__Secure-next-auth.session-token</code>，可只复制它的 Value；找不到就用扩展。</p>
+          <p>支持 Cookie 字符串、Cookie JSON 或 Session Token。登录过期后重新同步，不要分享 Cookie。</p>
         </details>
+        <p class="form-desc">只同步你有权使用的账号；添加时会验证登录、查询额度并可能创建项目，不会自动生成。Flow 积分和打码费用另计。</p>
       </div>
+      <details style="margin-bottom:14px;">
+        <summary style="cursor:pointer;color:var(--text-muted);font-size:13px;">高级选项（通常不用填写）</summary>
       <div class="form-group">
         <label class="form-label">项目 UUID (可选)</label>
         <input type="text" id="token-project-id" class="form-input" placeholder="留空自动创建或拉取" />
@@ -466,9 +480,10 @@
         <label class="form-label">备注 (可选)</label>
         <input type="text" id="token-remark" class="form-input" placeholder="如：测试主号" />
       </div>
+      </details>
       <div class="modal-actions">
         <button class="btn btn-secondary" onclick="closeAddTokenModal()">取消</button>
-        <button class="btn btn-primary" onclick="submitAddToken()">确认添加</button>
+        <button class="btn btn-primary" onclick="submitAddToken()">添加粘贴的账号</button>
       </div>
     </div>
   </div>
@@ -749,6 +764,21 @@
     function filterModels() {
       const q = document.getElementById('model-filter').value.toLowerCase();
       renderModels(allModels.filter(m => m.id.toLowerCase().includes(q) || m.description.toLowerCase().includes(q)));
+    }
+
+    async function copyExtensionConfig() {
+      if (!managementKey) return showToast('请等待自动连接完成后再复制。', 'error');
+      const payload = {
+        product: 'GFlow',
+        apiUrl: window.location.origin + '/v0/management/plugins/gflow/api/extension-sync',
+        connectionToken: managementKey
+      };
+      try {
+        await navigator.clipboard.writeText(JSON.stringify(payload));
+        showToast('已复制，请粘贴到 GFlow 登录助手；配置含管理凭据，请勿分享。');
+      } catch (_) {
+        showToast('复制被浏览器阻止，请允许此页面使用剪贴板后重试。', 'error');
+      }
     }
 
     function openAddTokenModal() {

@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><title>GFlow 登录助手</title><link rel="stylesheet" href="popup.css"></head>
+<body>
+  <h1>GFlow 登录助手</h1>
+  <p>登录 Google Flow 后，点一下同步到 EasyCPA。</p>
+  <form id="setup">
+    <label for="connection">粘贴 GFlow 扩展配置</label>
+    <textarea id="connection" rows="3" autocomplete="off" spellcheck="false" placeholder="在 GFlow → 添加账号 → 复制扩展配置"></textarea>
+    <small id="paired">首次粘贴一次即可；配置含管理凭据，请勿分享。</small>
+    <label for="email">当前 Google 账号邮箱</label>
+    <input id="email" type="email" required placeholder="name@gmail.com" autocomplete="off">
+    <label class="check"><input id="auto" type="checkbox" checked>每 60 分钟自动同步（浏览器需运行）</label>
+    <button id="save" type="submit">保存并同步</button>
+  </form>
+  <div class="actions"><button id="sync" type="button">立即同步</button><button id="forget" type="button">清除配置</button></div>
+  <p id="status" role="status" aria-live="polite">正在读取配置…</p>
+  <small>仅同步登录态，不会自动生成图片或视频。扩展本身免费，Flow 积分与打码费用另计。</small>
+  <p><a href="https://flow.google.com/projects" target="_blank" rel="noopener noreferrer">打开 Google Flow</a> · <a href="https://github.com/daodeqing/cpa-plugin-GFlow/tree/main/browser-extension" target="_blank" rel="noopener noreferrer">GitHub / 安装说明</a></p>
+  <script src="common.js"></script><script src="popup.js"></script>
+</body></html>

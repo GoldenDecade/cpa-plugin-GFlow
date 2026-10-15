@@ -207,6 +207,10 @@ class GFlowService:
 
         return {"success": True, "token_id": new_token.id}
 
+    async def handle_extension_sync(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        from extension_sync import sync_extension_account
+        return await sync_extension_account(self, params)
+
     async def handle_delete_token(self, params: Dict[str, Any]) -> Dict[str, Any]:
         await self.initialize()
         tid = params.get("token_id")

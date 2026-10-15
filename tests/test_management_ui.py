@@ -17,8 +17,8 @@ function element() {
     replaceChildren(...nodes) { this.children = nodes; }, focus() {} };
 }
 const events = new Map(), requests = [];
-let mode = 'ok', hasSession = false;
-const location = { hash: '#gflow_session=test-ticket', pathname: '/v0/resource/plugins/gflow/manage', search: '' };
+let mode = 'ok', hasSession = false, copiedConfig = '';
+const location = { origin: 'http://127.0.0.1:8317', hash: '#gflow_session=test-ticket', pathname: '/v0/resource/plugins/gflow/manage', search: '' };
 const context = vm.createContext({
   document: {
     getElementById(id) { if (!elements.has(id)) elements.set(id, element()); return elements.get(id); },
@@ -26,6 +26,7 @@ const context = vm.createContext({
   },
   window: { location, history: { replaceState() { location.hash = ''; } },
     addEventListener(name, fn) { events.set(name, fn); } },
+  navigator: { clipboard: { async writeText(value) { copiedConfig = value; } } },
   console, AbortController, URLSearchParams, setTimeout, clearTimeout,
   fetch: async (path, opts) => {
     requests.push({ path, opts });
@@ -60,6 +61,11 @@ const el = id => context.document.getElementById(id);
   assert.equal(el('save-settings-button').disabled, false);
   assert.equal(location.hash, '');
   assert.ok(requests.some(r => r.path.endsWith('/models')));
+  await context.copyExtensionConfig();
+  const pairing = JSON.parse(copiedConfig);
+  assert.equal(pairing.product, 'GFlow');
+  assert.equal(pairing.connectionToken, 'test-management-secret');
+  assert.equal(pairing.apiUrl, 'http://127.0.0.1:8317/v0/management/plugins/gflow/api/extension-sync');
   assert.ok(requests.every(r => !r.path.includes('test-management-secret') && !r.path.includes('test-ticket')));
   console.log('PASS startup automatically connects without a key input or secret in URL');
   await context.initializeManagement();
@@ -105,6 +111,8 @@ class ManagementUITest(unittest.TestCase):
         self.assertNotIn('id="mgmtKey"', html)
         self.assertNotIn('id="connection-form"', html)
         self.assertIn("如何获取 Cookie / Session Token", html)
+        self.assertIn("https://github.com/daodeqing/cpa-plugin-GFlow/tree/main/browser-extension", html)
+        self.assertNotIn("Flow2API", html)
         script = html.split("<script>", 1)[1].split("</script>", 1)[0]
         result = subprocess.run(
             [node, "-"], input="const SCRIPT = " + json.dumps(script) + chr(59) + chr(10) + HARNESS,

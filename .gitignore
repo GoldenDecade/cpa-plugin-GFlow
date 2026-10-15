@@ -9,3 +9,5 @@ data_test/
 *.dll
 *.dylib
 *.so
+
+!downloads/GFlow-browser-extension.zip

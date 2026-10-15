@@ -115,6 +115,7 @@ fn get_worker() -> &'static WorkerManager {
 }
 
 const MANAGE_HTML: &str = include_str!("../static/manage.html");
+const EXTENSION_ZIP: &[u8] = include_bytes!("../downloads/GFlow-browser-extension.zip");
 
 #[no_mangle]
 pub extern "C" fn cliproxy_plugin_init(
@@ -468,6 +469,10 @@ fn handle_management_register() -> Result<Vec<u8>, String> {
                     "Description": "GFlow 受校验的页面连接握手"
                 },
                 {
+                    "Path": "/extension.zip",
+                    "Description": "下载 GFlow 登录助手"
+                },
+                {
                     "Path": "/tmp",
                     "Description": "GFlow 本地素材文件下载服务"
                 }
@@ -480,6 +485,7 @@ fn handle_management_register() -> Result<Vec<u8>, String> {
                 { "Method": "PUT", "Path": "/plugins/gflow/api/tokens" },
                 { "Method": "DELETE", "Path": "/plugins/gflow/api/tokens" },
                 { "Method": "POST", "Path": "/plugins/gflow/api/refresh" },
+                { "Method": "POST", "Path": "/plugins/gflow/api/extension-sync" },
                 { "Method": "GET", "Path": "/plugins/gflow/api/config" },
                 { "Method": "POST", "Path": "/plugins/gflow/api/config" }
             ]
@@ -497,6 +503,20 @@ fn handle_management_handle(req: &[u8]) -> Result<Vec<u8>, String> {
 
     if path == "/v0/resource/plugins/gflow/bootstrap" {
         return handle_ui_bootstrap(&req_val);
+    }
+
+    if path == "/v0/resource/plugins/gflow/extension.zip" {
+        let out = serde_json::json!({"ok":true,"result":{
+            "StatusCode":200,
+            "Headers":{
+                "content-type":["application/zip"],
+                "content-disposition":["attachment; filename=GFlow-browser-extension.zip"],
+                "cache-control":["no-cache"],
+                "x-content-type-options":["nosniff"]
+            },
+            "Body":base64::engine::general_purpose::STANDARD.encode(EXTENSION_ZIP)
+        }});
+        return serde_json::to_vec(&out).map_err(|e| e.to_string());
     }
 
     // 1. Serve HTML dashboard resource
@@ -584,6 +604,8 @@ fn handle_management_handle(req: &[u8]) -> Result<Vec<u8>, String> {
             "DELETE" => get_worker().execute("delete_token", body_json),
             _ => Err("Method not allowed".to_string()),
         }
+    } else if path.ends_with("/api/extension-sync") {
+        get_worker().execute("extension_sync", body_json)
     } else if path.ends_with("/api/refresh") {
         get_worker().execute("refresh_credits", body_json)
     } else if path.ends_with("/api/config") {
