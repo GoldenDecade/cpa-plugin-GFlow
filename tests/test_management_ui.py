@@ -14,10 +14,10 @@ const elements = new Map();
 function element() {
   return { value: '', textContent: '', innerHTML: '', disabled: false, checked: false,
     style: {}, children: [], append(...nodes) { this.children.push(...nodes); },
-    replaceChildren(...nodes) { this.children = nodes; }, focus() {} };
+    replaceChildren(...nodes) { this.children = nodes; }, focus() {}, select() { this.selected = true; } };
 }
 const events = new Map(), requests = [];
-let mode = 'ok', hasSession = false, copiedConfig = '';
+let mode = 'ok', hasSession = false, copiedConfig = '', clipboardDenied = false;
 const location = { origin: 'http://127.0.0.1:8317', hash: '#gflow_session=test-ticket', pathname: '/v0/resource/plugins/gflow/manage', search: '' };
 const context = vm.createContext({
   document: {
@@ -26,7 +26,7 @@ const context = vm.createContext({
   },
   window: { location, history: { replaceState() { location.hash = ''; } },
     addEventListener(name, fn) { events.set(name, fn); } },
-  navigator: { clipboard: { async writeText(value) { copiedConfig = value; } } },
+  navigator: { clipboard: { async writeText(value) { if (clipboardDenied) throw new Error('clipboard denied'); copiedConfig = value; } } },
   console, AbortController, URLSearchParams, setTimeout, clearTimeout,
   fetch: async (path, opts) => {
     requests.push({ path, opts });
@@ -68,6 +68,23 @@ const el = id => context.document.getElementById(id);
   assert.equal(pairing.apiUrl, 'http://127.0.0.1:8317/v0/management/plugins/gflow/api/extension-sync');
   assert.ok(requests.every(r => !r.path.includes('test-management-secret') && !r.path.includes('test-ticket')));
   console.log('PASS startup automatically connects without a key input or secret in URL');
+  const beforeLink = requests.length;
+  await context.copyExtensionLink(false);
+  assert.ok(copiedConfig === 'http://127.0.0.1:8317/v0/resource/plugins/gflow/extension.zip');
+  assert.equal(el('extension-public-url').value, copiedConfig);
+  assert.equal(el('extension-link-panel').hidden, false);
+  assert.match(el('extension-link-feedback').textContent, /已复制/);
+  await context.copyExtensionLink(true);
+  assert.ok(copiedConfig.endsWith('/tree/main/browser-extension'));
+  clipboardDenied = true;
+  await context.copyExtensionLink(false);
+  assert.equal(el('extension-public-url').selected, true);
+  assert.ok(el('extension-link-feedback').textContent.includes('Ctrl+C'));
+  assert.ok(!el('extension-public-url').value.includes('test-management-secret'));
+  assert.equal(requests.length, beforeLink);
+  clipboardDenied = false;
+  console.log('PASS embedded link controls copy public URLs with manual fallback');
+
   await context.initializeManagement();
   assert.equal(el('stat-python-ver').textContent, 'Python 3.13.9');
   console.log('PASS page refresh uses the authenticated browser session');
@@ -119,7 +136,7 @@ class ManagementUITest(unittest.TestCase):
             capture_output=True, text=True, encoding="utf-8", timeout=20,
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertEqual(result.stdout.count("PASS "), 7, result.stdout)
+        self.assertEqual(result.stdout.count("PASS "), 8, result.stdout)
         print(result.stdout, end="")
 
 if __name__ == "__main__":

@@ -444,15 +444,25 @@
         <strong>方式一：浏览器自动同步（推荐）</strong>
         <p class="form-desc">GFlow 登录助手 · 免费扩展，不用 F12 找 Cookie。</p>
         <p style="display:flex;flex-wrap:wrap;gap:8px;margin:12px 0;">
-          <a class="btn btn-secondary btn-sm" href="/v0/resource/plugins/gflow/extension.zip" download>下载 GFlow 扩展</a>
+          <button class="btn btn-secondary btn-sm" type="button" onclick="copyExtensionLink(false)">复制下载地址</button>
           <button class="btn btn-primary btn-sm" type="button" onclick="copyExtensionConfig()">复制扩展配置</button>
-          <a class="btn btn-secondary btn-sm" href="https://github.com/daodeqing/cpa-plugin-GFlow/tree/main/browser-extension" target="_blank" rel="noopener noreferrer">扩展 GitHub</a>
         </p>
         <ol class="form-desc" style="padding-left:20px;line-height:1.8;">
-          <li>解压扩展，在 Chrome / Edge 扩展管理页开启“开发者模式”，点击“加载已解压的扩展程序”。</li>
+          <li>复制下载地址，在 Chrome / Edge 地址栏粘贴并回车，下载 ZIP 并解压。在扩展管理页开启“开发者模式”，点击“加载已解压的扩展程序”。</li>
           <li>点击上方“复制扩展配置”，在“GFlow 登录助手”中粘贴，填写当前 Google 邮箱。</li>
-          <li>在同一个浏览器登录 <a href="https://flow.google.com/projects" target="_blank" rel="noopener noreferrer">Google Flow</a>，点击扩展的“保存并同步”，回到这里刷新账号列表。</li>
+          <li>在同一个浏览器打开 <code>flow.google.com/projects</code> 并登录，点击扩展的“保存并同步”，回到这里刷新账号列表。</li>
         </ol>
+        <div id="extension-link-panel" hidden style="margin:10px 0;">
+          <label class="form-label" for="extension-public-url" id="extension-link-label">本机安装包下载地址</label>
+          <input id="extension-public-url" class="form-input" type="text" readonly onclick="this.select()" style="font-size:12px;" />
+          <p id="extension-link-feedback" class="form-desc" role="status" aria-live="polite"></p>
+        </div>
+        <details class="form-desc" style="line-height:1.8;">
+          <summary style="cursor:pointer;">这是什么？查看源码</summary>
+          <p>这是安装在 Chrome / Edge 中的免费浏览器助手，用于同步已登录的 Flow 账号。不是再次安装 EasyCPA 插件。</p>
+          <p>EasyCPA 内嵌窗口限制下载和新窗口跳转，请把地址粘贴到浏览器地址栏。</p>
+          <button class="btn btn-secondary btn-sm" type="button" onclick="copyExtensionLink(true)">复制源码与安装说明地址</button>
+        </details>
         <p class="form-desc">首次配置一次；之后可一键同步或每 60 分钟自动同步。配置包含管理凭据，请仅粘贴到 GFlow 登录助手，不要分享。</p>
       </section>
       <div class="form-group">
@@ -766,6 +776,26 @@
       renderModels(allModels.filter(m => m.id.toLowerCase().includes(q) || m.description.toLowerCase().includes(q)));
     }
 
+    async function copyExtensionLink(isSource) {
+      const url = isSource
+        ? 'https://github.com/daodeqing/cpa-plugin-GFlow/tree/main/browser-extension'
+        : window.location.origin + '/v0/resource/plugins/gflow/extension.zip';
+      const field = document.getElementById('extension-public-url');
+      const feedback = document.getElementById('extension-link-feedback');
+      document.getElementById('extension-link-panel').hidden = false;
+      document.getElementById('extension-link-label').textContent = isSource ? '源码与安装说明地址' : '安装包下载地址';
+      field.value = url;
+      try {
+        await navigator.clipboard.writeText(url);
+        feedback.textContent = '地址已复制，请到 Chrome / Edge 地址栏粘贴并回车。';
+        showToast('地址已复制，请在 Chrome / Edge 地址栏粘贴打开。');
+      } catch (_) {
+        field.focus();
+        field.select();
+        feedback.textContent = '自动复制被限制。地址已选中，请按 Ctrl+C，再到 Chrome / Edge 地址栏粘贴。';
+      }
+    }
+
     async function copyExtensionConfig() {
       if (!managementKey) return showToast('请等待自动连接完成后再复制。', 'error');
       const payload = {
@@ -786,6 +816,7 @@
       document.getElementById('token-cookies').value = '';
       document.getElementById('token-project-id').value = '';
       document.getElementById('token-remark').value = '';
+      document.getElementById('extension-link-panel').hidden = true;
       document.getElementById('add-modal').style.display = 'flex';
     }
     function closeAddTokenModal() {
