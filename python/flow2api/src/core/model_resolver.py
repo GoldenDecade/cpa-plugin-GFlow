@@ -646,6 +646,37 @@ def _extract_generation_params(request) -> Tuple[Optional[str], Optional[str]]:
     return aspect_ratio, image_size
 
 
+def normalize_model_alias(m: str) -> str:
+    """归一化别名前缀与比例后缀，如 nano-banana-* -> gemini-*，-16-9 -> -landscape。"""
+    prefixes = [
+        ("nano-banana-2-lite", "gemini-3.1-flash-lite-image"),
+        ("nano-banana-2.0-lite", "gemini-3.1-flash-lite-image"),
+        ("nano-banana-pro", "gemini-3.0-pro-image"),
+        ("nano-banana-2.1", "gemini-3.1-flash-image"),
+        ("nano-banana", "gemini-3.1-flash-image"),
+    ]
+    for nb, gem in prefixes:
+        if m == nb or m.startswith(nb + "-"):
+            m = gem + m[len(nb):]
+            break
+
+    ratios = [
+        ("-16-9", "-landscape"),
+        ("-16:9", "-landscape"),
+        ("-9-16", "-portrait"),
+        ("-9:16", "-portrait"),
+        ("-1-1", "-square"),
+        ("-1:1", "-square"),
+        ("-4-3", "-four-three"),
+        ("-4:3", "-four-three"),
+        ("-3-4", "-three-four"),
+        ("-3:4", "-three-four"),
+    ]
+    for r_num, r_name in ratios:
+        if r_num in m:
+            m = m.replace(r_num, r_name)
+    return m
+
 def resolve_model_name(
     model: str, request=None, model_config: Dict[str, Any] = None, images: Any = None
 ) -> str:
@@ -663,6 +694,8 @@ def resolve_model_name(
     Returns:
         解析后的内部模型名
     """
+    model = normalize_model_alias(model)
+
     # ────── 图片模型解析 ──────
     if model in IMAGE_BASE_MODELS:
         base = IMAGE_BASE_MODELS[model]

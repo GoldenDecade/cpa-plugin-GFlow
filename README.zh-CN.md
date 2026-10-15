@@ -15,21 +15,44 @@ EasyCPA 内嵌窗口限制直接下载和新窗口跳转，因此下载和源码
 - [扩展 GitHub 与安装说明](https://github.com/daodeqing/cpa-plugin-GFlow/tree/main/browser-extension)
 - [直接下载 GFlow 登录助手 ZIP](https://github.com/daodeqing/cpa-plugin-GFlow/raw/refs/heads/main/downloads/GFlow-browser-extension.zip)
 
-## 支持的模型
+## 支持的模型与调用方式
 
-适配 Google Flow 官方最新的 7 个核心模型，无需手动选择繁琐的比例与分辨率变体后缀：
+提供 **7 个核心基础模型（基础函数）** 以及与 **5 种比例（16:9、9:16、1:1、4:3、3:4）、3 种分辨率（1K、2K、4K）、视频时长（4s、6s、8s、10s）笛卡尔积排列组合** 的预置模型，方便客户端在下拉菜单中直接选择：
 
-- **图片生成 (Nano Banana 系列)**：
-  - `gflow-nano-banana-pro` (Nano Banana Pro)
-  - `gflow-nano-banana-2-lite` (Nano Banana 2 Lite)
-  - `gflow-nano-banana-2.1` (Nano Banana 2.1)
-- **视频生成 (Veo 3.1 & Omni 系列)**：
-  - `gflow-omni-1.1-flash` (Omni 1.1 Flash，支持文生视频与参考图)
-  - `gflow-veo-3.1-lite` (Veo 3.1 - Lite)
-  - `gflow-veo-3.1-fast` (Veo 3.1 - Fast)
-  - `gflow-veo-3.1-quality` (Veo 3.1 - Quality)
+### 1. 基础模型（支持参数自适应 / 默认横屏）
+调用基础模型时，可通过客户端请求参数（如 `aspectRatio: "1:1"`、`imageSize: "2k"`、OpenAI `size: "1024x1024"`）灵活控制输出，未指定时默认使用 16:9 横屏：
+- **图片**：
+  - `gflow-nano-banana-pro`（Nano Banana Pro，对应 GEM_PIX_2）
+  - `gflow-nano-banana-2-lite`（Nano Banana 2 Lite，对应 HARBOR_SEAL）
+  - `gflow-nano-banana-2.1`（Nano Banana 2.1，对应 BELUGA）
+- **视频**：
+  - `gflow-omni-1.1-flash`（Omni 1.1 Flash，支持文生视频与多参考图）
+  - `gflow-veo-3.1-lite`（Veo 3.1 - Lite）
+  - `gflow-veo-3.1-fast`（Veo 3.1 - Fast）
+  - `gflow-veo-3.1-quality`（Veo 3.1 - Quality）
 
-调用时可通过参数指定比例与画质（如 `aspectRatio: "16:9"`、OpenAI `size`），同时兼容 `gflow-gemini-3.1-flash-image` 等调用名称。
+### 2. 笛卡尔积预置模型（客户端下拉菜单直接选择）
+对于无法在客户端界面输入高级参数的工具（如 Chatbox、NextChat 等），可直接在下拉模型列表中选择具体比例、分辨率或时长的模型标识：
+- **图片（3 基础模型 × 5 比例 × 3 分辨率 = 45 变体）**：
+  - 格式：`gflow-{模型}-{比例}{画质}`
+  - 示例：
+    - `gflow-nano-banana-2.1-square`（1:1 方图）
+    - `gflow-nano-banana-2.1-square-2k`（1:1 方图 2K 放大）
+    - `gflow-nano-banana-2.1-square-4k`（1:1 方图 4K 放大）
+    - `gflow-nano-banana-2.1-landscape`（16:9 横屏）
+    - `gflow-nano-banana-2.1-portrait`（9:16 竖屏）
+    - `gflow-nano-banana-2.1-four-three`（4:3 横屏）
+    - `gflow-nano-banana-2.1-three-four`（3:4 竖屏）
+    - Nano Banana Pro、Nano Banana 2 Lite 命名规则完全一致。
+- **视频（Veo 系列 3 档 × 3 时长 × 2 比例 + Omni 4 时长 × 2 比例 = 26 变体）**：
+  - 格式：`gflow-{模型}-{时长}s-{比例}`
+  - 示例：
+    - `gflow-veo-3.1-fast-4s-landscape`（4秒 16:9 横屏）
+    - `gflow-veo-3.1-fast-4s-portrait`（4秒 9:16 竖屏）
+    - `gflow-veo-3.1-fast-8s-landscape`（8秒 16:9 横屏）
+    - `gflow-omni-1.1-flash-10s-portrait`（10秒 9:16 竖屏）
+
+后台同时兼容 `gflow-gemini-3.1-flash-image-square` 等历史调用名称及数字比例（如 `-16-9`、`-1-1`）。
 
 ## 也可以手动粘贴
 

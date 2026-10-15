@@ -43,6 +43,101 @@ if os.name == "nt":
         pass
 
 
+def get_gflow_model_catalog() -> List[Dict[str, Any]]:
+    models = []
+
+    # 1. 基础模型（保留客户端可调用的函数）
+    base_models = [
+        ("gflow-nano-banana-pro", "nano-banana-pro", "image", "Nano Banana Pro (自适应/默认)", "Google Flow 图片生成 - Nano Banana Pro (GEM_PIX_2) 基础函数"),
+        ("gflow-nano-banana-2-lite", "nano-banana-2-lite", "image", "Nano Banana 2 Lite (自适应/默认)", "Google Flow 图片生成 - Nano Banana 2 Lite (HARBOR_SEAL) 基础函数"),
+        ("gflow-nano-banana-2.1", "nano-banana-2.1", "image", "Nano Banana 2.1 (自适应/默认)", "Google Flow 图片生成 - Nano Banana 2.1 (BELUGA) 基础函数"),
+        ("gflow-omni-1.1-flash", "omni-1.1-flash", "video", "Omni 1.1 Flash (默认 8s 横屏)", "Google Flow 视频生成 - Omni 1.1 Flash 基础函数"),
+        ("gflow-veo-3.1-lite", "veo-3.1-lite", "video", "Veo 3.1 - Lite (默认 8s 横屏)", "Google Flow 视频生成 - Veo 3.1 Lite 基础函数"),
+        ("gflow-veo-3.1-fast", "veo-3.1-fast", "video", "Veo 3.1 - Fast (默认 8s 横屏)", "Google Flow 视频生成 - Veo 3.1 Fast 基础函数"),
+        ("gflow-veo-3.1-quality", "veo-3.1-quality", "video", "Veo 3.1 - Quality (默认 8s 横屏)", "Google Flow 视频生成 - Veo 3.1 Quality 基础函数"),
+    ]
+    for mid, orig_id, mtype, dname, desc in base_models:
+        models.append({
+            "id": mid,
+            "original_id": orig_id,
+            "type": mtype,
+            "display_name": dname,
+            "description": desc,
+        })
+
+    # 2. 图片笛卡尔积组合: 3 基础模型 x 5 比例 x 3 分辨率 = 45 变体
+    image_bases = [
+        ("nano-banana-pro", "Nano Banana Pro"),
+        ("nano-banana-2-lite", "Nano Banana 2 Lite"),
+        ("nano-banana-2.1", "Nano Banana 2.1"),
+    ]
+    ratios = [
+        ("landscape", "16:9 横屏"),
+        ("portrait", "9:16 竖屏"),
+        ("square", "1:1 方图"),
+        ("four-three", "4:3 横屏"),
+        ("three-four", "3:4 竖屏"),
+    ]
+    sizes = [
+        ("", "标准 1K"),
+        ("-2k", "2K 放大"),
+        ("-4k", "4K 放大"),
+    ]
+    for b_slug, b_name in image_bases:
+        for r_slug, r_name in ratios:
+            for s_slug, s_name in sizes:
+                mid = f"gflow-{b_slug}-{r_slug}{s_slug}"
+                orig = f"{b_slug}-{r_slug}{s_slug}"
+                dname = f"{b_name} ({r_name} {s_name})".strip()
+                desc = f"Google Flow 图片生成 - {b_name} {r_name} {s_name}".strip()
+                models.append({
+                    "id": mid,
+                    "original_id": orig,
+                    "type": "image",
+                    "display_name": dname,
+                    "description": desc,
+                })
+
+    # 3. 视频笛卡尔积组合: Veo 3.1 系列 (4s, 6s, 8s x 16:9, 9:16) + Omni 1.1 Flash (4s, 6s, 8s, 10s x 16:9, 9:16)
+    veo_families = [
+        ("veo-3.1-fast", "Veo 3.1 Fast"),
+        ("veo-3.1-lite", "Veo 3.1 Lite"),
+        ("veo-3.1-quality", "Veo 3.1 Quality"),
+    ]
+    durations = [4, 6, 8]
+    v_ratios = [("landscape", "16:9 横屏"), ("portrait", "9:16 竖屏")]
+    for v_slug, v_name in veo_families:
+        for d in durations:
+            for vr_slug, vr_name in v_ratios:
+                mid = f"gflow-{v_slug}-{d}s-{vr_slug}"
+                orig = f"{v_slug}-{d}s-{vr_slug}"
+                dname = f"{v_name} ({d}s {vr_name})"
+                desc = f"Google Flow 视频生成 - {v_name} {d}秒 {vr_name}"
+                models.append({
+                    "id": mid,
+                    "original_id": orig,
+                    "type": "video",
+                    "display_name": dname,
+                    "description": desc,
+                })
+
+    omni_durations = [4, 6, 8, 10]
+    for d in omni_durations:
+        for vr_slug, vr_name in v_ratios:
+            mid = f"gflow-omni-1.1-flash-{d}s-{vr_slug}"
+            orig = f"omni-1.1-flash-{d}s-{vr_slug}"
+            dname = f"Omni 1.1 Flash ({d}s {vr_name})"
+            desc = f"Google Flow 视频生成 - Omni 1.1 Flash {d}秒 {vr_name}"
+            models.append({
+                "id": mid,
+                "original_id": orig,
+                "type": "video",
+                "display_name": dname,
+                "description": desc,
+            })
+
+    return models
+
 class GFlowService:
     def __init__(self, data_dir: Path):
         self.data_dir = data_dir
@@ -282,59 +377,7 @@ class GFlowService:
         return {"success": True}
 
     async def handle_list_models(self, _params: Dict[str, Any]) -> Dict[str, Any]:
-        return {
-            "models": [
-                {
-                    "id": "gflow-nano-banana-pro",
-                    "original_id": "nano-banana-pro",
-                    "type": "image",
-                    "display_name": "Nano Banana Pro",
-                    "description": "Google Flow 图片生成 - Nano Banana Pro (GEM_PIX_2)",
-                },
-                {
-                    "id": "gflow-nano-banana-2-lite",
-                    "original_id": "nano-banana-2-lite",
-                    "type": "image",
-                    "display_name": "Nano Banana 2 Lite",
-                    "description": "Google Flow 图片生成 - Nano Banana 2 Lite (HARBOR_SEAL)",
-                },
-                {
-                    "id": "gflow-nano-banana-2.1",
-                    "original_id": "nano-banana-2.1",
-                    "type": "image",
-                    "display_name": "Nano Banana 2.1",
-                    "description": "Google Flow 图片生成 - Nano Banana 2.1 (BELUGA)",
-                },
-                {
-                    "id": "gflow-omni-1.1-flash",
-                    "original_id": "omni-1.1-flash",
-                    "type": "video",
-                    "display_name": "Omni 1.1 Flash",
-                    "description": "Google Flow 视频生成 - Omni 1.1 Flash (文生/参考图视频)",
-                },
-                {
-                    "id": "gflow-veo-3.1-lite",
-                    "original_id": "veo-3.1-lite",
-                    "type": "video",
-                    "display_name": "Veo 3.1 - Lite",
-                    "description": "Google Flow 视频生成 - Veo 3.1 Lite (文生视频)",
-                },
-                {
-                    "id": "gflow-veo-3.1-fast",
-                    "original_id": "veo-3.1-fast",
-                    "type": "video",
-                    "display_name": "Veo 3.1 - Fast",
-                    "description": "Google Flow 视频生成 - Veo 3.1 Fast (文生视频)",
-                },
-                {
-                    "id": "gflow-veo-3.1-quality",
-                    "original_id": "veo-3.1-quality",
-                    "type": "video",
-                    "display_name": "Veo 3.1 - Quality",
-                    "description": "Google Flow 视频生成 - Veo 3.1 Quality (文生视频)",
-                },
-            ]
-        }
+        return {"models": get_gflow_model_catalog()}
 
     async def handle_chat_completion(self, req_id: str, params: Dict[str, Any]):
         await self.initialize()
