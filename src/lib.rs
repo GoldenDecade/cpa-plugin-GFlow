@@ -379,6 +379,7 @@ fn handle_management_register() -> Result<Vec<u8>, String> {
             ],
             "Routes": [
                 { "Method": "GET", "Path": "/plugins/gflow/api/status" },
+                { "Method": "GET", "Path": "/plugins/gflow/api/models" },
                 { "Method": "GET", "Path": "/plugins/gflow/api/tokens" },
                 { "Method": "POST", "Path": "/plugins/gflow/api/tokens" },
                 { "Method": "PUT", "Path": "/plugins/gflow/api/tokens" },
@@ -470,7 +471,9 @@ fn handle_management_handle(req: &[u8]) -> Result<Vec<u8>, String> {
     };
     let body_json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap_or_else(|_| serde_json::json!({}));
 
-    let result = if path.ends_with("/api/status") {
+    let result = if path.ends_with("/api/models") {
+        get_worker().execute("list_models", serde_json::json!({}))
+    } else if path.ends_with("/api/status") {
         get_worker().execute("status", serde_json::json!({}))
     } else if path.ends_with("/api/tokens") {
         match method {

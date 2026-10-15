@@ -249,13 +249,22 @@
       <span style="font-size:12px; color:var(--text-muted);">CLIProxyAPI 插件</span>
     </div>
     <div class="header-actions">
-      <div class="mgmt-key-wrap">
-        <label for="mgmtKey">管理密钥:</label>
-        <input type="password" id="mgmtKey" class="mgmt-key-input" placeholder="留空自动读取" />
-      </div>
-      <button class="btn btn-secondary btn-sm" onclick="loadAll()">刷新状态</button>
+      <button id="refresh-button" class="btn btn-secondary btn-sm" onclick="loadAll()" disabled>刷新状态</button>
+      <button id="disconnect-button" class="btn btn-secondary btn-sm" onclick="disconnectManagement()" disabled>断开连接</button>
     </div>
   </header>
+
+  <section class="panel" aria-labelledby="connection-title">
+    <h2 id="connection-title" style="font-size:16px;">连接 EasyCPA 管理接口</h2>
+    <p class="form-desc">插件页面不能自动继承桌面程序的管理凭据。请从 EasyCPA 首页的“管理密钥”处复制密钥，在此连接；不是客户端 API Key，也不是 Google Cookie。</p>
+    <form id="connection-form" onsubmit="connectManagement(event)" style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-top:12px;">
+      <label for="mgmtKey">EasyCPA 管理密钥</label>
+      <input type="password" id="mgmtKey" class="form-input" style="flex:1;min-width:200px;" placeholder="粘贴 EasyCPA 管理密钥" autocomplete="off" aria-describedby="connection-status connection-privacy" />
+      <button id="connect-button" class="btn btn-primary" type="submit">连接并加载</button>
+    </form>
+    <p id="connection-status" class="form-desc" role="status" aria-live="polite">未连接：输入管理密钥后加载账号与运行状态。</p>
+    <p id="connection-privacy" class="form-desc">密钥仅保存在当前页面内存中，连接后清空输入框；不写入网址或本地存储，刷新或关闭页面后需要重新连接。</p>
+  </section>
 
   <nav class="tabs">
     <button class="tab-btn active" onclick="switchTab('accounts')">账号管理</button>
@@ -292,7 +301,7 @@
       <div class="panel-header">
         <div class="panel-title">账号列表</div>
         <div style="display:flex; gap:8px;">
-          <button class="btn btn-primary" onclick="openAddTokenModal()">+ 添加账号</button>
+          <button class="btn btn-primary" id="add-token-button" onclick="openAddTokenModal()" disabled>+ 添加账号</button>
         </div>
       </div>
 
@@ -376,7 +385,7 @@
         <div class="form-desc">生成后的图片与视频在本地保留的时长。设为 0 表示不自动删除。</div>
       </div>
 
-      <button class="btn btn-primary" onclick="saveSettings()">保存配置</button>
+      <button class="btn btn-primary" id="save-settings-button" onclick="saveSettings()" disabled>保存配置</button>
     </div>
   </main>
 
@@ -467,30 +476,114 @@
   <script>
     let allModels = [];
 
-    function getAuthHeader() {
-      const explicit = document.getElementById('mgmtKey').value.trim();
-      if (explicit) return 'Bearer ' + explicit;
-      const stored = localStorage.getItem('cpa_management_key') || localStorage.getItem('apiKey') || '';
-      if (stored) return 'Bearer ' + stored;
-      return '';
+    // 管理密钥只保留在页面内存；不从客户端 API Key 或浏览器存储猜测凭据。
+    let managementKey = '';
+    let configLoaded = false;
+
+    function tableMessage(id, columns, title, message) {
+      const row = document.createElement('tr');
+      const cell = document.createElement('td');
+      cell.colSpan = columns;
+      cell.className = 'empty-state';
+      const heading = document.createElement('h3');
+      const detail = document.createElement('p');
+      heading.textContent = title;
+      detail.textContent = message;
+      cell.append(heading, detail);
+      row.append(cell);
+      document.getElementById(id).replaceChildren(row);
+    }
+
+    function connectionMessage(message, isError = false) {
+      const el = document.getElementById('connection-status');
+      el.textContent = message;
+      el.style.color = isError ? 'var(--danger)' : 'var(--text-muted)';
+    }
+
+    function resetConnection(message = '未连接：请输入 EasyCPA 管理密钥。', isError = false) {
+      managementKey = '';
+      configLoaded = false;
+      document.getElementById('mgmtKey').value = '';
+      document.getElementById('refresh-button').disabled = true;
+      document.getElementById('disconnect-button').disabled = true;
+      document.getElementById('add-token-button').disabled = true;
+      document.getElementById('save-settings-button').disabled = true;
+      for (const id of ['stat-total-tokens', 'stat-active-tokens', 'stat-total-credits']) {
+        document.getElementById(id).textContent = '-';
+      }
+      document.getElementById('stat-python-ver').textContent = '未检测（未连接）';
+      document.getElementById('stat-python-path').textContent = '连接管理接口后检查 Python 运行状态。';
+      tableMessage('tokens-tbody', 7, '请先连接管理接口', message);
+      allModels = [];
+      tableMessage('models-tbody', 3, '请先连接管理接口', message);
+      document.getElementById('cfg-yescaptcha-key').value = '';
+      connectionMessage(message, isError);
+    }
+
+    function disconnectManagement() {
+      resetConnection('已断开：管理密钥已从页面内存清除。');
+    }
+
+    async function connectManagement(event) {
+      event.preventDefault();
+      const input = document.getElementById('mgmtKey');
+      const key = input.value.trim();
+      if (!key) {
+        connectionMessage('请输入 EasyCPA 管理密钥；客户端 API Key 不能用于管理接口。', true);
+        input.focus();
+        return;
+      }
+      resetConnection('正在验证管理密钥并检查后台状态…');
+      managementKey = key;
+      const button = document.getElementById('connect-button');
+      button.disabled = true;
+      input.disabled = true;
+      try {
+        await loadAll();
+      } finally {
+        input.disabled = false;
+        button.disabled = false;
+      }
     }
 
     async function apiRequest(path, method = 'GET', body = null) {
-      const headers = { 'Content-Type': 'application/json' };
-      const auth = getAuthHeader();
-      if (auth) headers['Authorization'] = auth;
-
-      const opts = { method, headers };
-      if (body) opts.body = JSON.stringify(body);
-
-      const resp = await fetch(path, opts);
+      if (!managementKey) {
+        const error = new Error('请先输入 EasyCPA 管理密钥并点击“连接并加载”。');
+        error.status = 401;
+        throw error;
+      }
+      // 仅向当前内核的管理路由发送密钥。
+      if (!path.startsWith('/v0/management/plugins/gflow/')) throw new Error('无效的管理接口地址。');
+      const requestKey = managementKey;
+      const headers = { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + requestKey };
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 30000);
+      let resp;
+      try {
+        resp = await fetch(path, { method, headers, body: body ? JSON.stringify(body) : undefined, signal: controller.signal, cache: 'no-store' });
+      } catch (error) {
+        if (error.name === 'AbortError') throw new Error('管理接口响应超时，请重试或检查内核运行状态。');
+        throw new Error('无法连接本机内核，请检查 EasyCPA 内核是否正在运行。');
+      } finally {
+        clearTimeout(timer);
+      }
+      if (requestKey !== managementKey) throw new Error('连接已变更，请重新加载。');
+      if (resp.status === 401 || resp.status === 403) {
+        const message = '管理鉴权失败（HTTP ' + resp.status + '）：请重新复制 EasyCPA 管理密钥；客户端 API Key 无效。这不代表 Python 离线。';
+        resetConnection(message, true);
+        const error = new Error(message);
+        error.status = resp.status;
+        throw error;
+      }
       if (!resp.ok) {
-        let msg = 'HTTP ' + resp.status;
+        let message = '管理接口请求失败（HTTP ' + resp.status + '）';
         try {
-          const errData = await resp.json();
-          if (errData && errData.error && errData.error.message) msg = errData.error.message;
+          const data = await resp.json();
+          message = typeof data.error === 'string' ? data.error : (data.error?.message || message);
         } catch (_) {}
-        throw new Error(msg);
+        const error = new Error(message);
+        error.status = resp.status;
+        throw error;
       }
       return await resp.json();
     }
@@ -519,8 +612,18 @@
         document.getElementById('stat-total-credits').textContent = (res.total_credits ?? 0).toLocaleString();
         document.getElementById('stat-python-ver').textContent = 'Python ' + (res.version || '已就绪');
         document.getElementById('stat-python-path').textContent = res.python || '-';
+        document.getElementById('refresh-button').disabled = false;
+        document.getElementById('disconnect-button').disabled = false;
+        document.getElementById('add-token-button').disabled = false;
+        connectionMessage('已连接：管理密钥验证通过，Python 后台已响应。');
+        return true;
       } catch (e) {
-        document.getElementById('stat-python-ver').textContent = '待配置/离线';
+        if (e.status !== 401 && e.status !== 403) {
+          document.getElementById('stat-python-ver').textContent = '后台状态获取失败';
+          document.getElementById('stat-python-path').textContent = e.message;
+          connectionMessage(e.message, true);
+        }
+        return false;
       }
     }
 
@@ -530,7 +633,7 @@
         const res = await apiRequest('/v0/management/plugins/gflow/api/tokens');
         const tokens = res.tokens || [];
         if (tokens.length === 0) {
-          tbody.innerHTML = '<tr><td colspan="7" class="empty-state"><h3>暂无 GFlow 账号</h3><p>点击上方“添加账号”，导入 Google Flow Cookies 即可立即开始使用。</p></td></tr>';
+          tbody.innerHTML = '<tr><td colspan="7" class="empty-state"><h3>暂无 GFlow 账号</h3><p>点击上方“添加账号”，导入你有权使用的 Google Flow Cookies；实际生成需要可用额度及验证码配置。</p></td></tr>';
           return;
         }
 
@@ -561,7 +664,7 @@
         }
         tbody.innerHTML = html;
       } catch (e) {
-        tbody.innerHTML = `<tr><td colspan="7" class="empty-state" style="color:var(--danger);"><h3>加载失败</h3><p>${e.message}</p></td></tr>`;
+        tableMessage('tokens-tbody', 7, e.status === 401 || e.status === 403 ? '请重新连接管理接口' : '账号加载失败', e.message);
       }
     }
 
@@ -582,12 +685,20 @@
         if (res.cache) {
           document.getElementById('cfg-cache-timeout').value = res.cache.timeout ?? 7200;
         }
+        configLoaded = true;
+        document.getElementById('save-settings-button').disabled = false;
       } catch (e) {
-        console.error('Failed to load config:', e);
+        configLoaded = false;
+        document.getElementById('save-settings-button').disabled = true;
+        connectionMessage('配置未加载，已禁止保存：' + e.message, true);
       }
     }
 
     async function saveSettings() {
+      if (!configLoaded || !managementKey) {
+        showToast('请先连接并成功加载配置后再保存。', 'error');
+        return;
+      }
       try {
         const payload = {
           captcha: {
@@ -608,22 +719,12 @@
 
     async function loadModels() {
       try {
-        const res = await apiRequest('/v0/management/plugins/gflow/api/status');
-        // Query models via list_models or fallback
-        const mRes = await apiRequest('/v0/resource/plugins/gflow/api/models').catch(() => null);
-        const models = (mRes && mRes.models) ? mRes.models : [
-          { id: "gflow-gemini-3.1-flash-image-landscape", type: "image", description: "Nano Banana 2.1 (16:9 横屏)" },
-          { id: "gflow-gemini-3.1-flash-image-portrait", type: "image", description: "Nano Banana 2.1 (9:16 竖屏)" },
-          { id: "gflow-gemini-3.1-flash-image-square", type: "image", description: "Nano Banana 2.1 (1:1 方图)" },
-          { id: "gflow-veo-3.1-fast-8s-landscape", type: "video", description: "Veo 3.1 Fast (8s 横屏视频)" },
-          { id: "gflow-veo-3.1-fast-8s-portrait", type: "video", description: "Veo 3.1 Fast (8s 竖屏视频)" },
-          { id: "gflow-veo-3.1-lite", type: "video", description: "Veo 3.1 Lite (8s 横屏视频)" },
-          { id: "gflow-omni-1.1-flash", type: "omni", description: "Omni 1.1 Flash (多图参考/图生视频)" }
-        ];
+        const result = await apiRequest('/v0/management/plugins/gflow/api/models');
+        const models = result.models || [];
         allModels = models;
         renderModels(models);
       } catch (e) {
-        console.error(e);
+        tableMessage('models-tbody', 3, '模型列表未加载', e.message);
       }
     }
 
@@ -648,6 +749,7 @@
     }
 
     function openAddTokenModal() {
+      if (!managementKey) return showToast('请先连接管理接口。', 'error');
       document.getElementById('token-cookies').value = '';
       document.getElementById('token-project-id').value = '';
       document.getElementById('token-remark').value = '';
@@ -712,14 +814,19 @@
       }
     }
 
-    function loadAll() {
-      loadStatus();
-      loadTokens();
-      loadConfig();
-      loadModels();
+    async function loadAll() {
+      if (!managementKey) {
+        resetConnection();
+        return;
+      }
+      configLoaded = false;
+      document.getElementById('save-settings-button').disabled = true;
+      if (!await loadStatus()) return;
+      await Promise.allSettled([loadTokens(), loadConfig(), loadModels()]);
     }
 
-    window.addEventListener('DOMContentLoaded', loadAll);
+    window.addEventListener('DOMContentLoaded', () => resetConnection());
+    window.addEventListener('pagehide', () => resetConnection());
   </script>
 </body>
 </html>
