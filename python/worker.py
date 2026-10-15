@@ -9,6 +9,7 @@ import asyncio
 import base64
 import json
 import os
+import secrets
 import sys
 import traceback
 from pathlib import Path
@@ -118,6 +119,9 @@ class GFlowService:
         _rpc_stdout.write(out + "\n")
         _rpc_stdout.flush()
 
+    async def handle_ui_nonce(self, _params: Dict[str, Any]) -> Dict[str, Any]:
+        return {"nonce": secrets.token_urlsafe(32)}
+
     async def handle_ping(self, _params: Dict[str, Any]) -> Dict[str, Any]:
         return {"pong": True}
 
@@ -171,15 +175,15 @@ class GFlowService:
 
     async def handle_add_token(self, params: Dict[str, Any]) -> Dict[str, Any]:
         await self.initialize()
-        st = params.get("st", "").strip()
-        google_cookies = params.get("google_cookies", "").strip()
+        from credentials import normalize_account_input
+        st, google_cookies = normalize_account_input(params.get("st"), params.get("google_cookies"))
         project_id = params.get("project_id", "").strip() or None
         project_name = params.get("project_name", "").strip() or None
         remark = params.get("remark", "").strip() or None
         captcha_proxy = params.get("captcha_proxy_url", "").strip() or None
 
-        token_st = st or google_cookies
-        if not token_st:
+        token_st = st
+        if not token_st and not google_cookies:
             raise ValueError("Cookie 或 st 不能为空")
 
         new_token = await self.token_manager.add_token(
@@ -188,6 +192,7 @@ class GFlowService:
             project_name=project_name,
             remark=remark,
             captcha_proxy_url=captcha_proxy,
+            google_cookies=google_cookies or None,
         )
         if google_cookies:
             await self.token_manager.update_token(

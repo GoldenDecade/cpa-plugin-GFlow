@@ -249,22 +249,11 @@
       <span style="font-size:12px; color:var(--text-muted);">CLIProxyAPI 插件</span>
     </div>
     <div class="header-actions">
-      <button id="refresh-button" class="btn btn-secondary btn-sm" onclick="loadAll()" disabled>刷新状态</button>
-      <button id="disconnect-button" class="btn btn-secondary btn-sm" onclick="disconnectManagement()" disabled>断开连接</button>
+      <button id="refresh-button" class="btn btn-secondary btn-sm" onclick="initializeManagement()" disabled>刷新状态</button>
     </div>
   </header>
 
-  <section class="panel" aria-labelledby="connection-title">
-    <h2 id="connection-title" style="font-size:16px;">连接 EasyCPA 管理接口</h2>
-    <p class="form-desc">插件页面不能自动继承桌面程序的管理凭据。请从 EasyCPA 首页的“管理密钥”处复制密钥，在此连接；不是客户端 API Key，也不是 Google Cookie。</p>
-    <form id="connection-form" onsubmit="connectManagement(event)" style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-top:12px;">
-      <label for="mgmtKey">EasyCPA 管理密钥</label>
-      <input type="password" id="mgmtKey" class="form-input" style="flex:1;min-width:200px;" placeholder="粘贴 EasyCPA 管理密钥" autocomplete="off" aria-describedby="connection-status connection-privacy" />
-      <button id="connect-button" class="btn btn-primary" type="submit">连接并加载</button>
-    </form>
-    <p id="connection-status" class="form-desc" role="status" aria-live="polite">未连接：输入管理密钥后加载账号与运行状态。</p>
-    <p id="connection-privacy" class="form-desc">密钥仅保存在当前页面内存中，连接后清空输入框；不写入网址或本地存储，刷新或关闭页面后需要重新连接。</p>
-  </section>
+  <p id="connection-status" class="form-desc" role="status" aria-live="polite" style="margin-bottom:16px;">正在自动连接插件管理接口…</p>
 
   <nav class="tabs">
     <button class="tab-btn active" onclick="switchTab('accounts')">账号管理</button>
@@ -452,9 +441,22 @@
         <button class="btn btn-secondary btn-sm" onclick="closeAddTokenModal()">✕</button>
       </div>
       <div class="form-group">
-        <label class="form-label">Google / Flow Cookies 或 Session Token (st)</label>
-        <textarea id="token-cookies" class="form-textarea" placeholder="粘贴从 flow.google.com 提取的完整 Cookie 字符串，或 Flow2API-Token-Updater 推送的 token 数据"></textarea>
-        <div class="form-desc">必须包含有效登录态。系统会自动解析账号并拉取初始积分。</div>
+        <label class="form-label" for="token-cookies">Google / Flow Cookies 或 Session Token (st)</label>
+        <textarea id="token-cookies" class="form-textarea" aria-describedby="cookie-help" placeholder="粘贴完整 Cookie 请求头、Cookie JSON，或 Session Token 的 Value"></textarea>
+        <div class="form-desc">必须使用你本人有权使用的已登录账号。添加时会验证登录态、查询初始额度，并可能创建项目；不会自动生成图片或视频。</div>
+        <details id="cookie-help" class="form-desc" open style="margin-top:12px;line-height:1.8;">
+          <summary style="cursor:pointer;font-weight:600;color:var(--text);">如何获取 Cookie / Session Token？</summary>
+          <p><strong>推荐：复制完整 Cookie</strong></p>
+          <ol style="padding-left:20px;">
+            <li>用 Chrome 或 Edge 打开 <a href="https://flow.google.com/" target="_blank" rel="noopener noreferrer">Google Flow</a>，登录你的 Google 账号，确认能进入 Flow。</li>
+            <li>按 F12（笔记本可能需要 Fn + F12），选择“网络 / Network”，再刷新 Flow 页面。</li>
+            <li>选择发往当前 Flow 网站的请求，在“标头 / Headers → 请求标头 / Request Headers”中找到 <code>Cookie</code>。只复制它的值，例如 <code>SID=…; __Secure-OSID=…; …</code>，粘贴到上方。不要复制响应中的 <code>Set-Cookie</code> 或整段请求报文。</li>
+            <li>如果该请求看不到 Cookie，换一个当前已登录 Flow 页面发出的同站请求。可查看“应用 / Application → 存储 / Storage → Cookies”，核对当前 Flow 域名下是否已有登录 Cookie；不要导出整个浏览器的所有网站 Cookie。</li>
+          </ol>
+          <p><strong>已有 Session Token 时：</strong>在“应用 / Application → Cookies”中寻找 <code>__Secure-next-auth.session-token</code> 或 <code>next-auth.session-token</code>，仅复制对应的 <code>Value</code>。部分新版 Flow 不再提供这个字段，找不到时使用上面的完整 Cookie 方式，不要随便选其他字段代替。</p>
+          <p><strong>支持的粘贴格式：</strong>完整 Cookie 字符串、Cookie 对象数组 JSON、包含 <code>st</code> / <code>google_cookies</code> 的 JSON，或单独的 Session Token 值。仅 ST 的方式受账号和 Flow 当前登录机制影响，完整 Cookie 通常包含更多必要登录信息。</p>
+          <p><strong>登录过期：</strong>先在浏览器重新登录，再复制最新 Cookie 更新账号。Cookie 相当于登录凭据，不要发到聊天、截图、GitHub 或第三方网站。</p>
+        </details>
       </div>
       <div class="form-group">
         <label class="form-label">项目 UUID (可选)</label>
@@ -476,7 +478,7 @@
   <script>
     let allModels = [];
 
-    // 管理密钥只保留在页面内存；不从客户端 API Key 或浏览器存储猜测凭据。
+    // 管理凭据由安装配置通过受校验的握手提供，不显示输入框、不写入浏览器存储。
     let managementKey = '';
     let configLoaded = false;
 
@@ -500,55 +502,57 @@
       el.style.color = isError ? 'var(--danger)' : 'var(--text-muted)';
     }
 
-    function resetConnection(message = '未连接：请输入 EasyCPA 管理密钥。', isError = false) {
+    function resetConnection(message = '正在自动连接插件管理接口…', isError = false) {
       managementKey = '';
       configLoaded = false;
-      document.getElementById('mgmtKey').value = '';
-      document.getElementById('refresh-button').disabled = true;
-      document.getElementById('disconnect-button').disabled = true;
+      document.getElementById('refresh-button').disabled = false;
       document.getElementById('add-token-button').disabled = true;
       document.getElementById('save-settings-button').disabled = true;
       for (const id of ['stat-total-tokens', 'stat-active-tokens', 'stat-total-credits']) {
         document.getElementById(id).textContent = '-';
       }
-      document.getElementById('stat-python-ver').textContent = '未检测（未连接）';
-      document.getElementById('stat-python-path').textContent = '连接管理接口后检查 Python 运行状态。';
-      tableMessage('tokens-tbody', 7, '请先连接管理接口', message);
+      document.getElementById('stat-python-ver').textContent = '连接中 / 待检测';
+      document.getElementById('stat-python-path').textContent = '等待安装配置中的管理凭据验证。';
+      tableMessage('tokens-tbody', 7, '等待自动连接', message);
       allModels = [];
-      tableMessage('models-tbody', 3, '请先连接管理接口', message);
+      tableMessage('models-tbody', 3, '等待自动连接', message);
       document.getElementById('cfg-yescaptcha-key').value = '';
       connectionMessage(message, isError);
     }
 
-    function disconnectManagement() {
-      resetConnection('已断开：管理密钥已从页面内存清除。');
-    }
-
-    async function connectManagement(event) {
-      event.preventDefault();
-      const input = document.getElementById('mgmtKey');
-      const key = input.value.trim();
-      if (!key) {
-        connectionMessage('请输入 EasyCPA 管理密钥；客户端 API Key 不能用于管理接口。', true);
-        input.focus();
-        return;
-      }
-      resetConnection('正在验证管理密钥并检查后台状态…');
-      managementKey = key;
-      const button = document.getElementById('connect-button');
+    async function initializeManagement() {
+      resetConnection();
+      const button = document.getElementById('refresh-button');
       button.disabled = true;
-      input.disabled = true;
+      const headers = {};
+      const ticket = new URLSearchParams(window.location.hash.slice(1)).get('gflow_session');
+      if (ticket) {
+        headers['X-GFlow-Session'] = ticket;
+        // 票据不留在当前页面地址中，也不发送给外部网站。
+        window.history.replaceState(null, '', window.location.pathname + window.location.search);
+      }
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 15000);
       try {
+        const response = await fetch('/v0/resource/plugins/gflow/bootstrap', {
+          headers, credentials: 'same-origin', cache: 'no-store', signal: controller.signal
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error?.message || '自动连接失败，请从 EasyCPA 插件菜单重新打开 GFlow。');
+        if (typeof result.management_key !== 'string' || !result.management_key) throw new Error('插件尚未配置管理凭据。');
+        managementKey = result.management_key;
         await loadAll();
+      } catch (error) {
+        resetConnection(error.name === 'AbortError' ? '自动连接超时，请点击“刷新状态”重试。' : error.message, true);
       } finally {
-        input.disabled = false;
+        clearTimeout(timer);
         button.disabled = false;
       }
     }
 
     async function apiRequest(path, method = 'GET', body = null) {
       if (!managementKey) {
-        const error = new Error('请先输入 EasyCPA 管理密钥并点击“连接并加载”。');
+        const error = new Error('插件连接尚未就绪，请点击“刷新状态”，或在插件配置中检查 management_key。');
         error.status = 401;
         throw error;
       }
@@ -569,7 +573,7 @@
       }
       if (requestKey !== managementKey) throw new Error('连接已变更，请重新加载。');
       if (resp.status === 401 || resp.status === 403) {
-        const message = '管理鉴权失败（HTTP ' + resp.status + '）：请重新复制 EasyCPA 管理密钥；客户端 API Key 无效。这不代表 Python 离线。';
+        const message = '管理鉴权失败（HTTP ' + resp.status + '）：请在“插件 → GFlow → 配置”中更新 management_key，再重新打开。不是 Python 离线。';
         resetConnection(message, true);
         const error = new Error(message);
         error.status = resp.status;
@@ -613,9 +617,8 @@
         document.getElementById('stat-python-ver').textContent = 'Python ' + (res.version || '已就绪');
         document.getElementById('stat-python-path').textContent = res.python || '-';
         document.getElementById('refresh-button').disabled = false;
-        document.getElementById('disconnect-button').disabled = false;
         document.getElementById('add-token-button').disabled = false;
-        connectionMessage('已连接：管理密钥验证通过，Python 后台已响应。');
+        connectionMessage('已自动连接，Python 后台已响应。');
         return true;
       } catch (e) {
         if (e.status !== 401 && e.status !== 403) {
@@ -696,7 +699,7 @@
 
     async function saveSettings() {
       if (!configLoaded || !managementKey) {
-        showToast('请先连接并成功加载配置后再保存。', 'error');
+        showToast('请等待自动连接并成功加载配置后再保存。', 'error');
         return;
       }
       try {
@@ -749,13 +752,14 @@
     }
 
     function openAddTokenModal() {
-      if (!managementKey) return showToast('请先连接管理接口。', 'error');
+      if (!managementKey) return showToast('请等待插件自动连接完成。', 'error');
       document.getElementById('token-cookies').value = '';
       document.getElementById('token-project-id').value = '';
       document.getElementById('token-remark').value = '';
       document.getElementById('add-modal').style.display = 'flex';
     }
     function closeAddTokenModal() {
+      document.getElementById('token-cookies').value = '';
       document.getElementById('add-modal').style.display = 'none';
     }
 
@@ -825,7 +829,7 @@
       await Promise.allSettled([loadTokens(), loadConfig(), loadModels()]);
     }
 
-    window.addEventListener('DOMContentLoaded', () => resetConnection());
+    window.addEventListener('DOMContentLoaded', () => initializeManagement());
     window.addEventListener('pagehide', () => resetConnection());
   </script>
 </body>

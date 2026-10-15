@@ -3,11 +3,107 @@ mod worker;
 
 use std::ffi::{c_char, c_void, CStr};
 use std::path::{Path, PathBuf};
-use std::sync::OnceLock;
+use std::sync::{Mutex, OnceLock};
 use abi::{CliproxyBuffer, CliproxyHostApi, CliproxyPluginApi, ABI_VERSION};
 use worker::WorkerManager;
 
 static WORKER: OnceLock<WorkerManager> = OnceLock::new();
+static MANAGEMENT_KEY: Mutex<String> = Mutex::new(String::new());
+static UI_NONCE: OnceLock<String> = OnceLock::new();
+
+// 安装配置中的管理密钥仅在后台保留；菜单携带随机启动票据，不携带管理密钥。
+fn apply_plugin_config(req: &[u8]) -> Result<(), String> {
+    let value: serde_json::Value = serde_json::from_slice(req).unwrap_or_default();
+    if let Some(encoded) = value.get("config_yaml").and_then(|v| v.as_str()) {
+        use base64::Engine;
+        let decoded = base64::engine::general_purpose::STANDARD.decode(encoded)
+            .ok().and_then(|bytes| String::from_utf8(bytes).ok());
+        let yaml = decoded.as_deref().unwrap_or(encoded);
+        let mut key = String::new();
+        for line in yaml.lines() {
+            let trimmed = line.trim();
+            if let Some(raw) = trimmed.strip_prefix("management_key:") {
+                let raw = raw.trim();
+                key = serde_json::from_str::<String>(raw)
+                    .unwrap_or_else(|_| raw.trim_matches(char::from(39)).to_string());
+            }
+            if let Some(raw) = trimmed.strip_prefix("python_path:") {
+                let path = serde_json::from_str::<String>(raw.trim())
+                    .unwrap_or_else(|_| raw.trim().trim_matches(char::from(39)).to_string());
+                if !path.is_empty() { get_worker().set_custom_python(path); }
+            }
+        }
+        if key.len() > 512 || key.chars().any(char::is_control) {
+            return Err("management_key contains invalid characters".to_string());
+        }
+        *MANAGEMENT_KEY.lock().map_err(|_| "configuration lock failed")? = key;
+    }
+    Ok(())
+}
+
+fn ui_nonce() -> Result<String, String> {
+    if let Some(value) = UI_NONCE.get() { return Ok(value.clone()); }
+    let result = get_worker().execute("ui_nonce", serde_json::json!({}))?;
+    let nonce = result.get("nonce").and_then(|v| v.as_str()).ok_or("missing UI nonce")?;
+    if nonce.len() < 40 || !nonce.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_') {
+        return Err("invalid UI nonce".to_string());
+    }
+    let _ = UI_NONCE.set(nonce.to_string());
+    Ok(UI_NONCE.get().ok_or("UI nonce unavailable")?.clone())
+}
+
+fn request_header(req: &serde_json::Value, name: &str) -> String {
+    req.get("Headers").and_then(|h| h.as_object()).and_then(|h| {
+        h.iter().find(|(k, _)| k.eq_ignore_ascii_case(name)).and_then(|(_, v)| {
+            v.as_array().and_then(|a| a.first()).and_then(|v| v.as_str()).or_else(|| v.as_str())
+        })
+    }).unwrap_or("").to_string()
+}
+
+fn nonce_matches(given: &str, expected: &str) -> bool {
+    if given.len() != expected.len() { return false; }
+    given.bytes().zip(expected.bytes()).fold(0u8, |diff, (a,b)| diff | (a ^ b)) == 0
+}
+
+fn handle_ui_bootstrap(req: &serde_json::Value) -> Result<Vec<u8>, String> {
+    use base64::Engine;
+    // 跨站脚本不得利用浏览器已有的 Cookie 获取管理凭据。
+    let site = request_header(req, "Sec-Fetch-Site");
+    if !site.is_empty() && site != "same-origin" && site != "none" {
+        return Ok(management_error(403, "请从 EasyCPA 插件菜单重新打开 GFlow"));
+    }
+    let origin = request_header(req, "Origin");
+    let host = request_header(req, "Host");
+    if !origin.is_empty() && origin != format!("http://{host}") && origin != format!("https://{host}") {
+        return Ok(management_error(403, "跨源连接已拒绝"));
+    }
+    let header_nonce = request_header(req, "X-GFlow-Session");
+    let cookie = request_header(req, "Cookie");
+    let cookie_nonce = cookie.split(';').find_map(|part| part.trim().strip_prefix("gflow_ui_session=")).unwrap_or("");
+    let given = if header_nonce.is_empty() { cookie_nonce } else { header_nonce.as_str() };
+    if !nonce_matches(given, &ui_nonce()?) {
+        return Ok(management_error(401, "连接凭据已失效，请从 EasyCPA 插件菜单重新打开 GFlow"));
+    }
+    let key = MANAGEMENT_KEY.lock().map_err(|_| "configuration lock failed")?.clone();
+    if key.is_empty() {
+        return Ok(management_error(503, "请在 EasyCPA 的“插件 → GFlow → 配置”中填写 management_key，然后重新打开页面"));
+    }
+    let body = serde_json::to_vec(&serde_json::json!({"management_key":key})).map_err(|e| e.to_string())?;
+    let secure = if origin.starts_with("https://") { "; Secure" } else { "" };
+    let out = serde_json::json!({"ok":true,"result":{
+        "StatusCode":200,
+        "Headers":{
+            "content-type":["application/json; charset=utf-8"],
+            "cache-control":["no-store, private"],
+            "referrer-policy":["no-referrer"],
+            "x-content-type-options":["nosniff"],
+            "set-cookie":[format!("gflow_ui_session={}; Path=/v0/resource/plugins/gflow; HttpOnly; SameSite=Strict; Max-Age=3600{secure}",ui_nonce()?)]
+        },
+        "Body":base64::engine::general_purpose::STANDARD.encode(body)
+    }});
+    serde_json::to_vec(&out).map_err(|e| e.to_string())
+}
+
 
 fn get_worker() -> &'static WorkerManager {
     WORKER.get_or_init(|| {
@@ -106,7 +202,8 @@ fn handle_method(method: &str, req_bytes: &[u8]) -> Result<Vec<u8>, String> {
     }
 }
 
-fn handle_register(_req: &[u8]) -> Result<Vec<u8>, String> {
+fn handle_register(req: &[u8]) -> Result<Vec<u8>, String> {
+    apply_plugin_config(req)?;
     let reg = serde_json::json!({
         "ok": true,
         "result": {
@@ -122,6 +219,12 @@ fn handle_register(_req: &[u8]) -> Result<Vec<u8>, String> {
                 "License": "MIT",
                 "Tags": ["Model", "Video", "Image", "Google Flow", "Veo", "Nano Banana"],
                 "ConfigFields": [
+                    {
+                        "Name": "management_key",
+                        "Type": "string",
+                        "Default": "",
+                        "Description": "安装时填写内核管理密钥，保存在插件配置中；GFlow 页面自动连接且不显示密钥。不是客户端 API Key。"
+                    },
                     {
                         "Name": "python_path",
                         "Type": "string",
@@ -145,22 +248,6 @@ fn handle_register(_req: &[u8]) -> Result<Vec<u8>, String> {
 }
 
 fn handle_reconfigure(req: &[u8]) -> Result<Vec<u8>, String> {
-    if !req.is_empty() {
-        if let Ok(v) = serde_json::from_slice::<serde_json::Value>(req) {
-            if let Some(config_yaml) = v.get("config_yaml").and_then(|c| c.as_str()) {
-                // Parse python_path if specified
-                for line in config_yaml.lines() {
-                    let trimmed = line.trim();
-                    if trimmed.starts_with("python_path:") {
-                        let val = trimmed["python_path:".len()..].trim().trim_matches('"').trim_matches('\x27');
-                        if !val.is_empty() {
-                            get_worker().set_custom_python(val.to_string());
-                        }
-                    }
-                }
-            }
-        }
-    }
     handle_register(req)
 }
 
@@ -369,8 +456,16 @@ fn handle_management_register() -> Result<Vec<u8>, String> {
             "Resources": [
                 {
                     "Path": "/manage",
+                    "Description": "GFlow 管理页面"
+                },
+                {
+                    "Path": format!("/manage#gflow_session={}", ui_nonce()?),
                     "Menu": "GFlow",
                     "Description": "GFlow 账号与模型管理控制台"
+                },
+                {
+                    "Path": "/bootstrap",
+                    "Description": "GFlow 受校验的页面连接握手"
                 },
                 {
                     "Path": "/tmp",
@@ -400,6 +495,10 @@ fn handle_management_handle(req: &[u8]) -> Result<Vec<u8>, String> {
     let path = req_val.get("Path").and_then(|s| s.as_str()).unwrap_or("");
     let method = req_val.get("Method").and_then(|s| s.as_str()).unwrap_or("GET");
 
+    if path == "/v0/resource/plugins/gflow/bootstrap" {
+        return handle_ui_bootstrap(&req_val);
+    }
+
     // 1. Serve HTML dashboard resource
     if path.contains("/plugins/gflow/manage") {
         let b64 = base64::engine::general_purpose::STANDARD.encode(MANAGE_HTML.as_bytes());
@@ -409,7 +508,9 @@ fn handle_management_handle(req: &[u8]) -> Result<Vec<u8>, String> {
                 "StatusCode": 200,
                 "Headers": {
                     "content-type": ["text/html; charset=utf-8"],
-                    "cache-control": ["no-cache"]
+                    "cache-control": ["no-store"],
+                    "referrer-policy": ["no-referrer"],
+                    "x-content-type-options": ["nosniff"]
                 },
                 "Body": b64
             }
