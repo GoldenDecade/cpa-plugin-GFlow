@@ -166,6 +166,7 @@ class GFlowService:
             "total_tokens": len(tokens),
             "active_tokens": len(active),
             "total_credits": total_credits,
+            "extension_sync": getattr(self, "last_extension_sync", None),
         }
 
     async def handle_list_tokens(self, _params: Dict[str, Any]) -> Dict[str, Any]:
@@ -235,8 +236,17 @@ class GFlowService:
         return {"success": True, "token_id": new_token.id}
 
     async def handle_extension_sync(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        from extension_sync import sync_extension_account
-        return await sync_extension_account(self, params)
+        from extension_sync import ExtensionSyncError, sync_extension_account
+        try:
+            result = await sync_extension_account(self, params)
+        except ExtensionSyncError as error:
+            result = error.result()
+        # 留下可公开的最近诊断，便于定位用户重试；不保留请求或 Cookie。
+        self.last_extension_sync = {
+            "success": result.get("success", False),
+            "error": result.get("error"),
+        }
+        return result
 
     async def handle_delete_token(self, params: Dict[str, Any]) -> Dict[str, Any]:
         await self.initialize()
@@ -302,9 +312,9 @@ class GFlowService:
             )
         if "proxy" in params:
             p = params["proxy"]
-            await self.db.update_proxy_config(
-                enabled=p.get("enabled"),
-                url=p.get("url"),
+            await self.proxy_manager.update_proxy_config(
+                enabled=bool(p.get("enabled")),
+                proxy_url=p.get("url"),
             )
         return {"success": True}
 

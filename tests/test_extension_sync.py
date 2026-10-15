@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock
 
 PYTHON_DIR = Path(__file__).resolve().parents[1] / "python"
 sys.path[:0] = [str(PYTHON_DIR), str(PYTHON_DIR / "flow2api")]
-from extension_sync import sync_extension_account
+from extension_sync import ExtensionSyncError, classify_sync_failure, sync_extension_account
 
 
 class ExtensionSyncTest(IsolatedAsyncioTestCase):
@@ -51,6 +51,37 @@ class ExtensionSyncTest(IsolatedAsyncioTestCase):
         with self.assertRaisesRegex(ValueError, "不一致"):
             await sync_extension_account(self.service, self.payload)
         self.service.db.update_token.assert_not_awaited()
+
+    async def test_auth_error_has_actionable_code_and_no_raw_credentials(self):
+        self.service.flow_client.st_to_at.side_effect = RuntimeError(
+            "Flow 登录认证失败 (rpc=nzlxg, code=401) Cookie=DO_NOT_ECHO"
+        )
+        with self.assertRaises(ExtensionSyncError) as raised:
+            await sync_extension_account(self.service, self.payload)
+        result = raised.exception.result()
+        self.assertEqual(result["error"]["code"], "gflow_google_auth_rejected")
+        self.assertEqual(result["status_code"], 422)
+        self.assertIn("同一浏览器", result["error"]["message"])
+        self.assertNotIn("DO_NOT_ECHO", str(result))
+        self.service.token_manager.add_token.assert_not_awaited()
+
+    async def test_timeout_and_protocol_errors_are_distinct(self):
+        for error, code, status in [
+            (TimeoutError(), "gflow_upstream_timeout", 504),
+            (RuntimeError("Flow frontend bootstrap metadata is unavailable"), "gflow_upstream_protocol", 502),
+            (RuntimeError("Flow frontend RPC returned no payload"), "gflow_upstream_protocol", 502),
+        ]:
+            failure = classify_sync_failure(error).result()
+            self.assertEqual(failure["error"]["code"], code)
+            self.assertEqual(failure["status_code"], status)
+
+    async def test_preparation_error_is_not_reported_as_bad_login(self):
+        self.service.token_manager.add_token.side_effect = RuntimeError("project RPC failed")
+        with self.assertRaises(ExtensionSyncError) as raised:
+            await sync_extension_account(self.service, self.payload)
+        self.assertEqual(raised.exception.code, "gflow_project_prepare_failed")
+        self.assertEqual(raised.exception.stage, "prepare")
+        self.assertIsNotNone(self.service.token_manager.add_token.call_args.kwargs["validated_session"])
 
     async def test_bad_email_and_missing_cookies_rejected_without_network(self):
         for data in [{}, {"login_account": "wrong", "google_cookies": "SID=fake"}, {"login_account": "ok@example.test", "google_cookies": "SID=fake"}]:

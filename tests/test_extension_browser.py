@@ -10,7 +10,7 @@ HARNESS = r"""
 const vm = require('node:vm'), assert = require('node:assert/strict');
 const saved = {};
 const listeners = {};
-let uploads = 0, responseStatus = 200, cookieReads = 0;
+let uploads = 0, responseStatus = 200, responseBody = {success:true, action:"updated"}, cookieReads = 0;
 const store = {
   async get(keys) { const result = {}; for (const key of Array.isArray(keys) ? keys : [keys]) result[key] = saved[key]; return result; },
   async set(values) { Object.assign(saved, structuredClone(values)); },
@@ -25,8 +25,11 @@ const context = vm.createContext({
     alarms: { async clear() {}, async create() {}, onAlarm: listener('alarm') },
     runtime: { id: 'gflow-test', onMessage: listener('message'), onStartup: listener('startup'), onInstalled: listener('installed') },
     action: { async setBadgeText() {}, async setBadgeBackgroundColor() {} },
-    cookies: { async getAll(request) {
-      assert.equal(request.url, 'https://flow.google.com/projects'); cookieReads++;
+    tabs: { async query() { return [{ id: 42 }]; } },
+    cookies: { async getAllCookieStores() { return [{ id: "profile-test", tabIds: [42] }]; },
+      async getAll(request) {
+      assert.equal(request.url, 'https://flow.google.com/projects');
+      assert.equal(request.storeId, "profile-test"); cookieReads++;
       return [
         { name:'SID', value:'fake-google', domain:'.google.com', path:'/' },
         { name:'__Secure-OSID', value:'fake-flow', domain:'flow.google.com', path:'/', hostOnly:true },
@@ -44,7 +47,7 @@ const context = vm.createContext({
     const payload = JSON.parse(options.body);
     assert.equal(payload.login_account, 'example@example.test');
     assert.ok(!payload.google_cookies.includes('never-upload'));
-    return { status:responseStatus, ok:responseStatus === 200, json:async () => ({success:true, action:'updated'}) };
+    return { status:responseStatus, ok:responseStatus === 200, json:async () => responseBody };
   },
   importScripts() {}
 });
@@ -74,6 +77,20 @@ vm.runInContext(BACKGROUND, context);
   assert.equal(failure.success,false);
   assert.match(failure.message,/凭据失效/);
   console.log('PASS rejected credentials produce a clear recovery instruction');
+  responseStatus=422;
+  responseBody={success:false,error:{code:"gflow_google_auth_rejected",message:"Google 未接受当前登录态，请刷新 Flow 项目页后再同步。"}};
+  const rejected=await context.syncNow();
+  assert.match(rejected.message,/Google 未接受/);
+  assert.match(rejected.message,/gflow_google_auth_rejected/);
+  responseStatus=200;
+  const oldBackend=await context.syncNow();
+  assert.equal(oldBackend.success,false);
+  assert.match(oldBackend.message,/Google 未接受/);
+  responseStatus=500;
+  responseBody={error:{message:"Cookie=do-not-echo-access_token"}};
+  const privateError=await context.syncNow();
+  assert.ok(!privateError.message.includes("do-not-echo"));
+  console.log("PASS server diagnostics are displayed without accepting false success or leaking cookies");
   assert.equal(listeners.message({action:'sync'},{id:'another-extension'},()=>{}),false);
   console.log('PASS messages from other extensions are ignored');
 })().catch(error => { console.error(error); process.exitCode=1; });
@@ -89,7 +106,7 @@ class ExtensionBrowserTest(unittest.TestCase):
         script = "const COMMON = " + json.dumps(common) + "; const BACKGROUND = " + json.dumps(background) + ";\n" + HARNESS
         result = subprocess.run([node, "-"], input=script, text=True, capture_output=True, encoding="utf-8", timeout=20)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertEqual(result.stdout.count("PASS "), 5, result.stdout)
+        self.assertEqual(result.stdout.count("PASS "), 6, result.stdout)
         print(result.stdout, end="")
 
 

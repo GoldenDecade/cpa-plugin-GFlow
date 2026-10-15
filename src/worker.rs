@@ -205,7 +205,9 @@ impl WorkerInner {
         cmd.arg(&self.data_dir);
         cmd.stdin(Stdio::piped());
         cmd.stdout(Stdio::piped());
-        cmd.stderr(Stdio::piped());
+        // Python 的 stderr 无人读取时会塞满管道并卡住同步；安全诊断由状态接口提供。
+        cmd.stderr(Stdio::null());
+        cmd.env("PYTHONDONTWRITEBYTECODE", "1");
 
         #[cfg(windows)]
         {

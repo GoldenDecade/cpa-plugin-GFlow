@@ -621,13 +621,17 @@ fn handle_management_handle(req: &[u8]) -> Result<Vec<u8>, String> {
     };
 
     match result {
-        Ok(data) => {
+        Ok(mut data) => {
+            // 同步的业务失败保留分类与 HTTP 状态，不再统一包装成 500 或假成功。
+            let status_code = data.get("status_code").and_then(|v| v.as_u64())
+                .filter(|status| (400..600).contains(status)).unwrap_or(200);
+            if let Some(object) = data.as_object_mut() { object.remove("status_code"); }
             let json_bytes = serde_json::to_vec(&data).unwrap_or_default();
             let b64 = base64::engine::general_purpose::STANDARD.encode(&json_bytes);
             let out = serde_json::json!({
                 "ok": true,
                 "result": {
-                    "StatusCode": 200,
+                    "StatusCode": status_code,
                     "Headers": {
                         "content-type": ["application/json; charset=utf-8"]
                     },

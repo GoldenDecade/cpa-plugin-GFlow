@@ -29,7 +29,15 @@ async function executeSync() {
   if (!config) throw new Error('请先从 GFlow 复制配置并保存');
   const connection = validateConnection(config);
   const loginAccount = validateEmail(config.loginAccount);
-  const cookies = await chrome.cookies.getAll({ url: 'https://flow.google.com/projects' });
+  // 无痕窗口或不同 Cookie 存储区应读取当前窗口的登录态。
+  const cookieQuery = { url: 'https://flow.google.com/projects' };
+  if (chrome.tabs?.query && chrome.cookies.getAllCookieStores) {
+    const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+    const stores = await chrome.cookies.getAllCookieStores();
+    const store = stores.find(item => item.tabIds.includes(tabs[0]?.id));
+    if (store) cookieQuery.storeId = store.id;
+  }
+  const cookies = await chrome.cookies.getAll(cookieQuery);
   const payload = { login_account: loginAccount, google_cookies: serializeFlowCookies(cookies), protocol_mode: 'protocol' };
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 120000);
@@ -41,13 +49,21 @@ async function executeSync() {
   } catch (error) {
     throw new Error(error.name === 'AbortError' ? 'GFlow 同步超时，请稍后重试' : '无法连接本机 GFlow，请确认 EasyCPA 内核运行中');
   } finally { clearTimeout(timer); }
-  if (!response.ok) {
+  // 成功与失败都读取 JSON；旧版后端只返回 HTTP 500 时也可显示其安全提示。
+  let result = null;
+  try { result = await response.json(); } catch (_) {}
+  if (!response.ok || !result?.success) {
     if (response.status === 401 || response.status === 403) throw new Error('连接凭据失效，请回到 GFlow 重新复制扩展配置');
     if (response.status === 404) throw new Error('当前 GFlow 版本不支持扩展同步，请更新插件');
-    throw new Error('GFlow 未接受同步（HTTP ' + response.status + '），请检查网络、登录账号和 Cookie 后重试');
+    const detail = result?.error;
+    const safeMessage = typeof detail?.message === 'string'
+      && detail.message.length <= 500
+      && !/(cookie\s*[:=]|bearer\s|connectionToken|access_token|https?:\/\/|[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,})/i.test(detail.message)
+      ? detail.message : null;
+    const code = /^gflow_[a-z_]+$/.test(detail?.code || '') ? detail.code : null;
+    if (safeMessage) throw new Error(safeMessage + (code ? ' [' + code + ']' : ''));
+    throw new Error('GFlow 同步失败（HTTP ' + response.status + '）。请更新插件后重试以查看具体原因。');
   }
-  const result = await response.json();
-  if (!result.success) throw new Error('GFlow 未完成同步，请检查账号状态后重试');
   return { success: true, action: result.action, message: result.action === 'updated' ? 'GFlow 账号登录态已更新' : 'GFlow 账号已添加' };
 }
 

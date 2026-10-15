@@ -372,6 +372,7 @@ class TokenManager:
         proxy_url: Optional[str] = None,
         auto_refresh_enabled: bool = True,
         refresh_interval_minutes: int = 120,
+        validated_session: Optional[Dict[str, Any]] = None,
     ) -> Token:
         """Add a new token and prepare its pooled projects."""
         if not st and google_cookies:
@@ -385,7 +386,8 @@ class TokenManager:
 
         debug_logger.log_info(f"[ADD_TOKEN] Converting ST to AT...")
         try:
-            result = await self.flow_client.st_to_at(
+            # 扩展同步已完成验证时复用结果，避免重复请求 Google 和重复查询额度。
+            result = validated_session if validated_session is not None else await self.flow_client.st_to_at(
                 st,
                 google_cookies=google_cookies,
             )
@@ -414,7 +416,7 @@ class TokenManager:
             raise ValueError(f"Google Cookie 验证失败：{str(e)}")
 
         try:
-            credits_result = await self.flow_client.get_credits(
+            credits_result = result if "credits" in result else await self.flow_client.get_credits(
                 at,
                 google_cookies=google_cookies,
             )

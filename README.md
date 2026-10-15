@@ -15,6 +15,12 @@ EasyCPA 内嵌窗口限制直接下载和新窗口跳转，因此下载和源码
 - [扩展 GitHub 与安装说明](https://github.com/daodeqing/cpa-plugin-GFlow/tree/main/browser-extension)
 - [直接下载 GFlow 登录助手 ZIP](https://github.com/daodeqing/cpa-plugin-GFlow/raw/refs/heads/main/downloads/GFlow-browser-extension.zip)
 
+## 扩展同步失败时
+
+扩展最新版为 **0.1.1**。从“添加账号”重新下载并覆盖原扩展文件夹，在 Chrome / Edge 扩展管理页点击“重新加载”；原连接配置会保留。仓库更新不会自动更新浏览器里另外解压的旧文件夹。
+
+新版会显示 Google 认证拒绝、连接超时、页面接口变化或项目准备失败的具体原因。先在同一浏览器配置里打开 Flow 项目页并刷新，再同步；需要代理时，在 GFlow 设置中保存代理地址。真实 Google 账号同步及真实生成仍未完成验收。
+
 ## 支持的模型与调用方式
 
 提供 **7 个核心基础模型（客户端模型列表仅显示这 7 个）**，彻底避免数十个变体堆满客户端下拉列表。客户端在界面上选择功能参数时，后台**自动调配**到底层笛卡尔积模型：

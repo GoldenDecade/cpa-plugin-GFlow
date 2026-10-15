@@ -96,6 +96,18 @@ class BootstrapTest(unittest.TestCase):
             self.assertIn("background.js", archive.namelist())
             self.assertNotIn(b"synthetic-management-key", archive.read("popup.js"))
 
+    def test_sync_validation_keeps_http_status_and_safe_error(self):
+        result = self.rpc("management.handle", {
+            "Method": "POST", "Path": "/v0/management/plugins/gflow/api/extension-sync",
+            "Body": base64.b64encode(json.dumps({"login_account": "invalid"}).encode()).decode(),
+        })["result"]
+        self.assertEqual(result["StatusCode"], 400)
+        body = json.loads(base64.b64decode(result["Body"]))
+        self.assertFalse(body["success"])
+        self.assertEqual(body["error"]["code"], "gflow_invalid_email")
+        self.assertNotIn("traceback", str(body))
+        self.assertNotIn("status_code", body)
+
     def test_missing_and_invalid_ticket_are_rejected(self):
         for headers in [{}, {"X-GFlow-Session": "incorrect"}]:
             result = self.resource("bootstrap", headers)

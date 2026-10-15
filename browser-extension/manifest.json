@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "GFlow 登录助手",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "将当前浏览器的 Google Flow 登录态同步到本机 EasyCPA GFlow 插件。",
   "permissions": ["cookies", "storage", "alarms"],
   "host_permissions": ["https://flow.google.com/*", "https://google.com/*", "https://*.google.com/*"],
