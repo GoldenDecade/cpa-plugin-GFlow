@@ -1,9 +1,16 @@
+// common.js - GFlow 登录助手通用工具函数
 const GFLOW_SYNC_PATH = '/v0/management/plugins/gflow/api/extension-sync';
 
 function validateConnection(value) {
-  if (!value || value.product !== 'GFlow') throw new Error('请粘贴从 GFlow 添加账号窗口复制的配置');
+  if (!value || value.product !== 'GFlow') {
+    throw new Error('请粘贴从 GFlow 添加账号窗口复制的配置');
+  }
   let url;
-  try { url = new URL(value.apiUrl); } catch (_) { throw new Error('GFlow 连接地址无效'); }
+  try {
+    url = new URL(value.apiUrl);
+  } catch (_) {
+    throw new Error('GFlow 连接地址无效');
+  }
   if (!['127.0.0.1', 'localhost'].includes(url.hostname) || !['http:', 'https:'].includes(url.protocol)
       || url.username || url.password || url.search || url.hash || url.pathname !== GFLOW_SYNC_PATH) {
     throw new Error('扩展仅连接本机 GFlow；请重新复制配置');
@@ -17,7 +24,9 @@ function validateConnection(value) {
 
 function validateEmail(value) {
   const email = String(value || '').trim().toLowerCase();
-  if (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error('请填写当前 Google 账号邮箱');
+  if (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    throw new Error('请填写当前 Google 账号邮箱');
+  }
   return email;
 }
 
@@ -26,25 +35,60 @@ function connectionPermission(apiUrl) {
   return url.protocol + '//' + url.hostname + '/*';
 }
 
+function normalizeCookieDomain(domain) {
+  return String(domain || '').replace(/^\./, '').toLowerCase();
+}
+
+function isGoogleAccountCookieDomain(domain) {
+  return normalizeCookieDomain(domain) === 'google.com';
+}
+
+function deduplicateCookies(cookies) {
+  const map = new Map();
+  for (const c of cookies) {
+    if (!c || !c.name || !c.value) continue;
+    const partitionSite = c.partitionKey && c.partitionKey.topLevelSite ? c.partitionKey.topLevelSite : '';
+    const key = [c.name, c.domain, c.path, c.storeId, partitionSite].join('\u0000');
+    if (!map.has(key)) map.set(key, c);
+  }
+  return Array.from(map.values());
+}
+
+function serializeCookieStorage(cookies) {
+  const payload = cookies
+    .filter(cookie => cookie && cookie.name && cookie.value)
+    .map(cookie => {
+      const item = {
+        name: cookie.name,
+        value: cookie.value,
+        domain: cookie.domain || '',
+        path: cookie.path || '/',
+        secure: Boolean(cookie.secure),
+        httpOnly: Boolean(cookie.httpOnly),
+        hostOnly: Boolean(cookie.hostOnly),
+        session: Boolean(cookie.session)
+      };
+      if (Number.isFinite(cookie.expirationDate)) item.expirationDate = cookie.expirationDate;
+      if (cookie.sameSite) item.sameSite = cookie.sameSite;
+      if (cookie.partitionKey && typeof cookie.partitionKey === 'object') item.partitionKey = cookie.partitionKey;
+      return item;
+    });
+  return JSON.stringify(payload);
+}
+
 function serializeFlowCookies(cookies) {
-  const scope = new URL('https://flow.google.com/projects');
-  const selected = cookies.filter(cookie => {
-    const domain = String(cookie.domain || '').replace(/^\./, '').toLowerCase();
-    const hostMatches = cookie.hostOnly ? scope.hostname === domain : scope.hostname === domain || scope.hostname.endsWith('.' + domain);
+  const deduped = deduplicateCookies(cookies);
+  const selected = deduped.filter(cookie => {
+    const domain = normalizeCookieDomain(cookie.domain);
+    const isGoogle = domain === 'google.com' || domain.endsWith('.google.com');
+    if (!isGoogle) return false;
     const path = cookie.path || '/';
-    const pathMatches = scope.pathname === path || scope.pathname.startsWith(path.endsWith('/') ? path : path + '/');
-    return cookie.name && cookie.value && hostMatches && pathMatches;
+    return !path || path === '/' || path.startsWith('/projects') || '/projects'.startsWith(path.endsWith('/') ? path : path + '/');
   });
   const names = new Set(selected.map(cookie => cookie.name));
   if (!['OSID', '__Secure-OSID'].some(name => names.has(name))
       || !['SID', 'HSID', 'SSID', 'APISID', 'SAPISID', '__Secure-1PSID', '__Secure-3PSID'].some(name => names.has(name))) {
     throw new Error('未找到完整 Flow 登录态，请先在本浏览器登录 flow.google.com，再重试');
   }
-  return JSON.stringify(selected.map(cookie => ({
-    name: cookie.name, value: cookie.value, domain: cookie.domain, path: cookie.path || '/',
-    secure: Boolean(cookie.secure), httpOnly: Boolean(cookie.httpOnly), hostOnly: Boolean(cookie.hostOnly),
-    ...(cookie.sameSite ? { sameSite: cookie.sameSite } : {}),
-    ...(cookie.expirationDate ? { expirationDate: cookie.expirationDate } : {}),
-    ...(cookie.partitionKey ? { partitionKey: cookie.partitionKey } : {})
-  })));
+  return serializeCookieStorage(selected);
 }

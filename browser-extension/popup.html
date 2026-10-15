@@ -1,21 +1,79 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
-<head><meta charset="utf-8"><title>GFlow 登录助手</title><link rel="stylesheet" href="popup.css"></head>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GFlow 登录助手</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
 <body>
-  <h1>GFlow 登录助手</h1>
-  <p>登录 Google Flow 后，点一下同步到 EasyCPA。</p>
+  <div class="header">
+    <div class="header-title">
+      <span class="logo">🔄</span>
+      <div>
+        <h1>GFlow 登录助手</h1>
+        <div class="subtitle">EasyCPA Google Flow 登录态同步</div>
+      </div>
+    </div>
+    <a href="https://github.com/daodeqing/cpa-plugin-GFlow/tree/main/browser-extension" target="_blank" class="github-link" title="查看 GitHub 源码">GitHub</a>
+  </div>
+
+  <div id="status" class="status-banner">正在读取状态...</div>
+
+  <div class="card">
+    <div class="card-title">快捷导入配置</div>
+    <div class="card-desc">在 GFlow 页面点击【复制扩展配置】后，直接在此粘贴：</div>
+    <div class="paste-row">
+      <input type="text" id="quickPaste" placeholder='粘贴从 GFlow 页面复制的配置 JSON' />
+      <button type="button" class="btn btn-secondary btn-sm" id="quickFillBtn">识别填入</button>
+    </div>
+  </div>
+
   <form id="setup">
-    <label for="connection">粘贴 GFlow 扩展配置</label>
-    <textarea id="connection" rows="3" autocomplete="off" spellcheck="false" placeholder="在 GFlow → 添加账号 → 复制扩展配置"></textarea>
-    <small id="paired">首次粘贴一次即可；配置含管理凭据，请勿分享。</small>
-    <label for="email">当前 Google 账号邮箱</label>
-    <input id="email" type="email" required placeholder="name@gmail.com" autocomplete="off">
-    <label class="check"><input id="auto" type="checkbox" checked>每 60 分钟自动同步（浏览器需运行）</label>
-    <button id="save" type="submit">保存并同步</button>
+    <div class="form-group">
+      <label for="apiUrl">连接接口 (API URL)</label>
+      <input type="text" id="apiUrl" placeholder="http://127.0.0.1:8317/v0/management/plugins/gflow/api/extension-sync" required />
+    </div>
+
+    <div class="form-group">
+      <label for="connectionToken">连接 Token (凭据)</label>
+      <input type="password" id="connectionToken" placeholder="输入从 GFlow 复制的管理凭据" required autocomplete="off" />
+    </div>
+
+    <div class="form-group">
+      <label for="email">当前 Google 账号邮箱</label>
+      <input type="email" id="email" placeholder="例如 deqingdao3@gmail.com" required />
+      <div class="field-hint">确保与当前 Chrome 窗口已登录的 Flow 账号邮箱一致。</div>
+    </div>
+
+    <div class="checkbox-row">
+      <label>
+        <input type="checkbox" id="autoSync" checked />
+        每 60 分钟自动同步（需保持浏览器开启）
+      </label>
+    </div>
+
+    <div class="actions">
+      <button type="submit" class="btn btn-primary" id="saveAndSyncBtn">保存并立即同步</button>
+      <button type="button" class="btn btn-outline" id="saveOnlyBtn">仅保存配置</button>
+    </div>
+
+    <div class="secondary-actions">
+      <button type="button" class="btn btn-link" id="logsBtn">📋 查看同步日志</button>
+      <button type="button" class="btn btn-link danger" id="forgetBtn">清除配置</button>
+    </div>
   </form>
-  <div class="actions"><button id="sync" type="button">立即同步</button><button id="forget" type="button">清除配置</button></div>
-  <p id="status" role="status" aria-live="polite">正在读取配置…</p>
-  <small>仅同步登录态，不会自动生成图片或视频。扩展本身免费，Flow 积分与打码费用另计。</small>
-  <p><a href="https://flow.google.com/projects" target="_blank" rel="noopener noreferrer">打开 Google Flow</a> · <a href="https://github.com/daodeqing/cpa-plugin-GFlow/tree/main/browser-extension" target="_blank" rel="noopener noreferrer">GitHub / 安装说明</a></p>
-  <script src="common.js"></script><script src="popup.js"></script>
-</body></html>
+
+  <div class="guide">
+    <strong>📌 极简使用说明：</strong>
+    <ol>
+      <li>在本浏览器打开并登录 <code>flow.google.com</code>，确保能进入项目页；</li>
+      <li>在 EasyCPA GFlow 管理页点击“复制扩展配置”，粘贴至上方快捷框；</li>
+      <li>点击“保存并立即同步”，助手将在后台自动刷新并提交最新登录凭据。</li>
+    </ol>
+  </div>
+
+  <script src="common.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>

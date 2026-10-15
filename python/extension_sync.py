@@ -80,6 +80,8 @@ async def sync_extension_account(service, params):
             code="gflow_incomplete_cookies",
         ) from None
     try:
+        if params.get("user_agent") and hasattr(service.flow_client, "_set_request_fingerprint"):
+            service.flow_client._set_request_fingerprint({"user_agent": params["user_agent"]})
         await service.initialize()
     except Exception as error:
         raise classify_sync_failure(error, "initialize") from None

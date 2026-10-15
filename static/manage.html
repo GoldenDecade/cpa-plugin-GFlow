@@ -440,30 +440,35 @@
         <div class="modal-title">添加 GFlow 账号</div>
         <button class="btn btn-secondary btn-sm" onclick="closeAddTokenModal()">✕</button>
       </div>
-      <section style="padding:14px;border:1px solid var(--border);border-radius:8px;margin-bottom:18px;">
-        <strong>方式一：浏览器自动同步（推荐）</strong>
-        <p class="form-desc">GFlow 登录助手 · 免费扩展，不用 F12 找 Cookie。</p>
-        <p style="display:flex;flex-wrap:wrap;gap:8px;margin:12px 0;">
+      <section style="padding:14px;border:1px solid var(--border);border-radius:8px;margin-bottom:18px;background:var(--bg);">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+          <strong style="font-size:14px;color:var(--text);">方式一：浏览器助手一键同步（推荐）</strong>
+          <span style="font-size:11px;color:var(--primary);background:var(--primary-soft);padding:2px 8px;border-radius:10px;font-weight:600;">官方推荐 · 自动激活</span>
+        </div>
+        <p class="form-desc" style="margin-bottom:8px;">
+          配套扩展 GitHub 开源地址：<a href="https://github.com/daodeqing/cpa-plugin-GFlow/tree/main/browser-extension" target="_blank" rel="noopener noreferrer" style="color:var(--primary);text-decoration:underline;font-weight:500;">https://github.com/daodeqing/cpa-plugin-GFlow/tree/main/browser-extension</a>
+        </p>
+        <p style="display:flex;flex-wrap:wrap;gap:8px;margin:10px 0;">
           <button class="btn btn-secondary btn-sm" type="button" onclick="copyExtensionLink(false)">复制下载地址</button>
           <button class="btn btn-primary btn-sm" type="button" onclick="copyExtensionConfig()">复制扩展配置</button>
+          <button class="btn btn-secondary btn-sm" type="button" onclick="copyExtensionLink(true)">复制 GitHub 源码地址</button>
         </p>
         <ol class="form-desc" style="padding-left:20px;line-height:1.8;">
-          <li>复制下载地址，在 Chrome / Edge 地址栏粘贴并回车，下载 ZIP 并解压。在扩展管理页开启“开发者模式”，点击“加载已解压的扩展程序”。</li>
-          <li>点击上方“复制扩展配置”，在“GFlow 登录助手”中粘贴，填写当前 Google 邮箱。</li>
-          <li>在同一个浏览器打开 <code>flow.google.com/projects</code> 并登录，点击扩展的“保存并同步”，回到这里刷新账号列表。</li>
+          <li><b>下载并加载扩展</b>：复制下载地址在浏览器地址栏打开并解压，在 <code>chrome://extensions/</code> 开启“开发者模式”并点击“加载已解压的扩展程序”。</li>
+          <li><b>粘贴配置</b>：点击上方【复制扩展配置】，在扩展弹出页的“快捷导入”中粘贴（自动识别填入接口与凭据），并填入当前 Google 账号邮箱。</li>
+          <li><b>一键同步</b>：在同一浏览器登录 <code>flow.google.com</code>，在扩展中点击【保存并立即同步】，扩展将在后台自动激活会话并提交凭据！</li>
         </ol>
         <div id="extension-link-panel" hidden style="margin:10px 0;">
           <label class="form-label" for="extension-public-url" id="extension-link-label">本机安装包下载地址</label>
           <input id="extension-public-url" class="form-input" type="text" readonly onclick="this.select()" style="font-size:12px;" />
           <p id="extension-link-feedback" class="form-desc" role="status" aria-live="polite"></p>
         </div>
-        <details class="form-desc" style="line-height:1.8;">
-          <summary style="cursor:pointer;">这是什么？查看源码</summary>
-          <p>这是安装在 Chrome / Edge 中的免费浏览器助手，用于同步已登录的 Flow 账号。不是再次安装 EasyCPA 插件。</p>
-          <p>EasyCPA 内嵌窗口限制下载和新窗口跳转，请把地址粘贴到浏览器地址栏。</p>
-          <button class="btn btn-secondary btn-sm" type="button" onclick="copyExtensionLink(true)">复制源码与安装说明地址</button>
+        <details class="form-desc" style="line-height:1.8;margin-top:6px;">
+          <summary style="cursor:pointer;color:var(--text-muted);">这是什么？查看详细说明</summary>
+          <p>这是安装在 Chrome / Edge 中的免费浏览器助手，用于自动同步已登录的 Flow 会话 Cookie。不是再次安装 EasyCPA 插件。</p>
+          <p>EasyCPA 内嵌窗口限制直接下载，请把地址粘贴到浏览器地址栏下载。</p>
         </details>
-        <p class="form-desc">首次配置一次；之后可一键同步或每 60 分钟自动同步。配置包含管理凭据，请仅粘贴到 GFlow 登录助手，不要分享。</p>
+        <p class="form-desc" style="margin-top:6px;font-size:11px;color:var(--text-dim);">配置仅保存在当前 Chrome 扩展本地，请勿将管理凭据分享给他人。</p>
       </section>
       <div class="form-group">
         <strong>方式二：手动粘贴</strong>

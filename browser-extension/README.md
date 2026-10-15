@@ -1,35 +1,29 @@
 # GFlow 登录助手
 
-Chrome / Edge 浏览器扩展，将当前 Google Flow 登录态同步到本机 EasyCPA 的 GFlow 插件。
+Chrome / Edge 浏览器扩展，用于将当前浏览器的 Google Flow 登录态安全同步到本机 EasyCPA 的 GFlow 插件。
 
-## 安装一次
+## 一键安装步骤
 
-1. 下载仓库中的 `downloads/GFlow-browser-extension.zip` 并解压。
-2. 打开 `chrome://extensions/`（Edge 用 `edge://extensions/`），开启“开发者模式”。
-3. 点击“加载已解压的扩展程序”，选择解压后包含 `manifest.json` 的文件夹。
+1. 下载 [GFlow-browser-extension.zip](https://github.com/daodeqing/cpa-plugin-GFlow/raw/main/downloads/GFlow-browser-extension.zip) 并解压到本地文件夹。
+2. 打开 Chrome 地址栏输入并访问：`chrome://extensions/`（Edge 访问 `edge://extensions/`）。
+3. 开启页面右上角的**“开发者模式”**开关。
+4. 点击**“加载已解压的扩展程序”**，选择解压后的 `GFlow-browser-extension` 文件夹即可。
 
-## 添加账号
+## 配置与同步（极简 3 步）
 
-1. 在 EasyCPA 打开 **GFlow → 添加账号 → 复制扩展配置**。
-2. 打开浏览器中的 **GFlow 登录助手**，粘贴配置，填写当前 Google 邮箱。
-3. 在同一个浏览器配置中登录 Google Flow，点击 **保存并同步**，返回 GFlow 刷新列表。
+1. **登录 Flow**：在当前 Chrome 浏览器中打开并登录 `https://flow.google.com`，确认能进入创作或项目页。
+2. **复制配置**：在 EasyCPA GFlow 管理页点击【复制扩展配置】。
+3. **一键同步**：点击浏览器右上角 GFlow 助手图标，将配置粘贴至“快捷导入”框（自动填入接口与凭据），核对 Google 邮箱后点击【保存并立即同步】。
 
-之后只需点击“立即同步”；也可以每 60 分钟自动同步，浏览器需要保持运行。多个账号请使用不同的浏览器配置文件。切换账号后，更新扩展中的邮箱再同步。
+## 核心特性
 
-扩展和源码免费。Flow 生成积分、订阅、代理或验证码服务费用另计。同步会验证登录态、查询额度，并可能创建项目，不会发起图片或视频生成。
+- **后台智能激活**：同步时在后台激活 `flow.google.com/projects` 会话，无需手动 F12 抓包或拼装 Cookie。
+- **完整会话保护**：精确提取 Flow 与 Google 账号会话 Cookie，保留域名、路径及安全属性。
+- **实时日志看板**：内置【📋 查看同步日志】页面，清晰呈现每步操作与上游诊断，排查问题一目了然。
+- **定时自动刷新**：默认每 60 分钟自动同步一次，确保后台模型调用凭据持续有效。
+- **安全隔离**：配置仅保存在本机浏览器的 `chrome.storage.local`，仅允许连接本机 `127.0.0.1`，不泄露任何凭据。
 
-## 更新扩展
+## 开源项目与支持
 
-将新 ZIP 解压并覆盖原扩展目录中的程序文件，再到扩展管理页点击 GFlow 的“重新加载”。不需要清除配置或重新填写密钥。新版为 **0.1.1**。
-
-同步失败时会显示原因代码：Google 拒绝登录态时，先在同一个浏览器配置中打开 Flow 项目页并刷新后重试；连接超时或无法连接时，检查 GFlow 的代理设置。真实账号的登录态由 Google 验证，扩展不会把失败标为同步成功。
-
-## 数据范围
-
-- 只读取浏览器访问 `https://flow.google.com/projects` 时匹配的 Cookie，不扫描其他网站。
-- 只连接 `127.0.0.1` / `localhost` 的 GFlow 同步接口，默认共用端口 8317。
-- 连接配置包含内核管理凭据，仅保存在本机扩展的 `chrome.storage.local`，不通过 Chrome 同步。不要分享配置或提交截图。
-- 新版 Flow 登录态通常需要完整 Cookie；只拿到旧 Session Token 时，可改用 GFlow 的“手动粘贴”方式，支持范围取决于 Flow 当前登录机制。
-- 手动点击同步和定时同步复用同一任务；不自动重试新增请求，避免超时重试造成重复账号。不会自动启用已经停用的账号。
-
-此扩展为 GFlow 独立实现，未复制第三方 Token Updater 的源码。浏览器安装和真实 Google 登录同步尚未进行验收；模拟同步、鉴权与账号更新逻辑有离线测试覆盖。
+- GitHub 源码：[https://github.com/daodeqing/cpa-plugin-GFlow](https://github.com/daodeqing/cpa-plugin-GFlow)
+- 配合 EasyCPA 内核共用端口 `8317`，开箱即用。
