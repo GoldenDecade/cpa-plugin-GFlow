@@ -17,42 +17,31 @@ EasyCPA 内嵌窗口限制直接下载和新窗口跳转，因此下载和源码
 
 ## 支持的模型与调用方式
 
-提供 **7 个核心基础模型（基础函数）** 以及与 **5 种比例（16:9、9:16、1:1、4:3、3:4）、3 种分辨率（1K、2K、4K）、视频时长（4s、6s、8s、10s）笛卡尔积排列组合** 的预置模型，方便客户端在下拉菜单中直接选择：
+提供 **7 个核心基础模型（客户端模型列表仅显示这 7 个）**，彻底避免数十个变体堆满客户端下拉列表。客户端在界面上选择功能参数时，后台**自动调配**到底层笛卡尔积模型：
 
-### 1. 基础模型（支持参数自适应 / 默认横屏）
-调用基础模型时，可通过客户端请求参数（如 `aspectRatio: "1:1"`、`imageSize: "2k"`、OpenAI `size: "1024x1024"`）灵活控制输出，未指定时默认使用 16:9 横屏：
-- **图片**：
-  - `gflow-nano-banana-pro`（Nano Banana Pro，对应 GEM_PIX_2）
-  - `gflow-nano-banana-2-lite`（Nano Banana 2 Lite，对应 HARBOR_SEAL）
-  - `gflow-nano-banana-2.1`（Nano Banana 2.1，对应 BELUGA）
-- **视频**：
-  - `gflow-omni-1.1-flash`（Omni 1.1 Flash，支持文生视频与多参考图）
-  - `gflow-veo-3.1-lite`（Veo 3.1 - Lite）
-  - `gflow-veo-3.1-fast`（Veo 3.1 - Fast）
-  - `gflow-veo-3.1-quality`（Veo 3.1 - Quality）
+### 1. 客户端选择的核心模型（严格展示 7 个）
+- **图片模型 (3 个)**：
+  - `gflow-nano-banana-pro`：Nano Banana Pro（GEM_PIX_2，支持 1:1, 16:9, 9:16, 4:3, 3:4 与 1K/2K/4K 自动调配）
+  - `gflow-nano-banana-2-lite`：Nano Banana 2 Lite（HARBOR_SEAL，支持 5 种比例与 1K/2K/4K 自动调配）
+  - `gflow-nano-banana-2.1`：Nano Banana 2.1（BELUGA，支持 5 种比例与 1K/2K/4K 自动调配）
+- **视频模型 (4 个)**：
+  - `gflow-omni-1.1-flash`：Omni 1.1 Flash（支持 4s/6s/8s/10s 时长与横/竖屏自动调配，原生支持多张参考图）
+  - `gflow-veo-3.1-lite`：Veo 3.1 - Lite（支持 4s/6s/8s 时长与横/竖屏自动调配）
+  - `gflow-veo-3.1-fast`：Veo 3.1 - Fast（支持 4s/6s/8s 时长与横/竖屏自动调配）
+  - `gflow-veo-3.1-quality`：Veo 3.1 - Quality（支持 4s/6s/8s 时长与横/竖屏自动调配）
 
-### 2. 笛卡尔积预置模型（客户端下拉菜单直接选择）
-对于无法在客户端界面输入高级参数的工具（如 Chatbox、NextChat 等），可直接在下拉模型列表中选择具体比例、分辨率或时长的模型标识：
-- **图片（3 基础模型 × 5 比例 × 3 分辨率 = 45 变体）**：
-  - 格式：`gflow-{模型}-{比例}{画质}`
-  - 示例：
-    - `gflow-nano-banana-2.1-square`（1:1 方图）
-    - `gflow-nano-banana-2.1-square-2k`（1:1 方图 2K 放大）
-    - `gflow-nano-banana-2.1-square-4k`（1:1 方图 4K 放大）
-    - `gflow-nano-banana-2.1-landscape`（16:9 横屏）
-    - `gflow-nano-banana-2.1-portrait`（9:16 竖屏）
-    - `gflow-nano-banana-2.1-four-three`（4:3 横屏）
-    - `gflow-nano-banana-2.1-three-four`（3:4 竖屏）
-    - Nano Banana Pro、Nano Banana 2 Lite 命名规则完全一致。
-- **视频（Veo 系列 3 档 × 3 时长 × 2 比例 + Omni 4 时长 × 2 比例 = 26 变体）**：
-  - 格式：`gflow-{模型}-{时长}s-{比例}`
-  - 示例：
-    - `gflow-veo-3.1-fast-4s-landscape`（4秒 16:9 横屏）
-    - `gflow-veo-3.1-fast-4s-portrait`（4秒 9:16 竖屏）
-    - `gflow-veo-3.1-fast-8s-landscape`（8秒 16:9 横屏）
-    - `gflow-omni-1.1-flash-10s-portrait`（10秒 9:16 竖屏）
+### 2. 功能选择自动调配 (Auto-dispatch)
+当客户端选择上述 7 个模型时，后台会自动根据请求携带的参数解析调配：
+- **图片调配**：根据客户端选择的 `aspectRatio`（1:1、16:9、9:16、4:3、3:4）或 OpenAI `size`（如 1024x1024、1792x1024 等），以及分辨率 `imageSize`（1K、2K、4K）或 OpenAI `quality`（standard、medium、hd、high），自动调配到底层 45 个组合之一。未指定时默认使用 16:9 标准 1K。
+- **视频调配**：根据客户端选择的时长（4s、6s、8s、10s）与方向（16:9 landscape、9:16 portrait），以及是否有附带参考图（自动走 I2V/R2V），自动调配到底层 26 个视频组合之一。未指定时默认使用 8s 16:9 横屏。
 
-后台同时兼容 `gflow-gemini-3.1-flash-image-square` 等历史调用名称及数字比例（如 `-16-9`、`-1-1`）。
+### 3. 底层保留的笛卡尔积变体（支持直接调用与函数调用）
+底层完整保留所有排列组合，若第三方客户端或智能体直接传具体变体名或调用函数，后台依然直接匹配执行：
+- **图片变体（3 基础 × 5 比例 × 3 分辨率 = 45 种）**：
+  - 例如：`gflow-nano-banana-2.1-square-4k`（1:1 4K）、`gflow-nano-banana-pro-portrait-2k`（9:16 2K）、`gflow-nano-banana-2-lite-four-three`（4:3 1K）等。
+- **视频变体（Veo 3 族 × 3 时长 × 2 方向 + Omni 4 时长 × 2 方向 = 26 种）**：
+  - 例如：`gflow-veo-3.1-fast-4s-portrait`（4s 竖屏）、`gflow-omni-1.1-flash-10s-landscape`（10s 横屏）等。
+- 后台同时兼容带历史 Gemini 别名（如 `gflow-gemini-3.1-flash-image-square`）以及数字比例命名（如 `-16-9`、`-1-1`）。
 
 ## 也可以手动粘贴
 
