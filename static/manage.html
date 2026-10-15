@@ -325,19 +325,29 @@
       </div>
 
       <div class="form-group">
-        <label class="form-label">验证码方式 (Captcha Method)</label>
-        <select id="cfg-captcha-method" class="form-select">
-          <option value="yescaptcha">YesCaptcha (推荐打码)</option>
-          <option value="capsolver">CapSolver</option>
-          <option value="twocaptcha">2Captcha</option>
-          <option value="personal">Personal 内置浏览器 (需本机 Chrome)</option>
-          <option value="browser">Browser 有头浏览器</option>
+        <label class="form-label" for="cfg-captcha-method">验证码方式 (Captcha Method)</label>
+        <select id="cfg-captcha-method" class="form-select" aria-describedby="captcha-cost-help">
+          <option value="yescaptcha">YesCaptcha（付费 · 需注册 / 充值 / API Key）</option>
+          <option value="capsolver">CapSolver（付费 · 需注册 / 充值 / API Key）</option>
+          <option value="twocaptcha">2Captcha（付费 · 需注册 / 充值 / API Key）</option>
+          <option value="personal">Personal 内置浏览器（本地打码免费 · 需本机 Chrome）</option>
+          <option value="browser">Browser 有头浏览器（本地打码免费 · 需浏览器环境）</option>
         </select>
-        <div class="form-desc">Flow 要求生成时提交验证码 Token。有打码密钥时推荐 YesCaptcha/CapSolver。</div>
+        <div id="captcha-cost-help" class="form-desc">
+          <p><strong>第三方付费打码：</strong>YesCaptcha、CapSolver、2Captcha 均需注册各自平台账号、获取 API Key，并按平台规则充值或购买套餐。注册免费不代表调用免费；若有赠送额度或试用，以平台当前规则为准。</p>
+          <p><strong>Personal：</strong>本地打码免费，无需注册或充值第三方打码平台；需本机 Chrome 及可用的浏览器依赖，可能需要登录 Google。</p>
+          <p><strong>Browser：</strong>本地打码免费，无需第三方打码平台账号或 API Key；需安装浏览器及相关依赖，并提供可显示浏览器窗口的桌面环境。</p>
+          <p><strong>费用范围：</strong>“免费”仅指本地打码免平台服务费；Google Flow 账号、图像 / 视频生成积分、订阅和代理费用另计。本地模式会占用电脑资源，验证能否通过取决于 Google 风控。</p>
+          <p>注册与费用说明：
+            <a href="https://yescaptcha.com/" target="_blank" rel="noopener noreferrer">YesCaptcha 官网</a> ·
+            <a href="https://www.capsolver.com/" target="_blank" rel="noopener noreferrer">CapSolver 官网 / 价格</a> ·
+            <a href="https://2captcha.com/" target="_blank" rel="noopener noreferrer">2Captcha 官网 / 价格</a>
+          </p>
+        </div>
       </div>
 
       <div class="form-group">
-        <label class="form-label">YesCaptcha API 密钥</label>
+        <label class="form-label" for="cfg-yescaptcha-key">YesCaptcha API 密钥（需注册平台账号，调用按平台规则收费）</label>
         <input type="password" id="cfg-yescaptcha-key" class="form-input" placeholder="输入客户端密钥" />
       </div>
 
