@@ -211,7 +211,7 @@ fn handle_register(req: &[u8]) -> Result<Vec<u8>, String> {
             "schema_version": 6,
             "metadata": {
                 "Name": "GFlow",
-                "Version": "0.1.0",
+                "Version": env!("CARGO_PKG_VERSION"),
                 "Author": "daodeqing",
                 "Description": "Google Flow (Veo & Nano Banana) 模型接入与多账号池管理插件",
                 "GitHubRepository": "https://github.com/daodeqing/cpa-plugin-GFlow",

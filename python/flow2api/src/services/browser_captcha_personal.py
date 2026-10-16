@@ -6928,61 +6928,9 @@ class BrowserCaptchaService:
     def _build_personal_cookie_targets(
         cls, raw_cookie: Optional[str]
     ) -> list[Dict[str, Any]]:
-        """为 personal 内置浏览器构建 cookie 注入列表。
-
-        说明：
-        - 原始 Cookie 头没有 domain 元数据时，直接扩展到 labs/google/recaptcha 三个目标。
-        - 即使 token.google_cookies 已经带有显式的 google.com 域，也额外镜像一份到
-          `www.recaptcha.net`，保证 enterprise reload 首轮请求也能命中 cookie。
-        - 对 Google/reCAPTCHA Cookie 强制使用 `SameSite=None`
-          场景下第三方 anchor/reload 请求继续丢 cookie。
-        """
-        browser_cookies = build_browser_cookie_targets(
-            raw_cookie,
-            fallback_urls=list(PERSONAL_COOKIE_TARGET_URLS),
-        )
-        if not browser_cookies:
-            return []
-
-        expanded: list[Dict[str, Any]] = []
-        seen: set[str] = set()
-
-        def append_cookie(cookie: Dict[str, Any]) -> None:
-            stable_key = json.dumps(
-                cookie, ensure_ascii=True, sort_keys=True, separators=(",", ":")
-            )
-            if stable_key in seen:
-                return
-            seen.add(stable_key)
-            expanded.append(cookie)
-
-        for cookie in browser_cookies:
-            scope_host = cls._extract_cookie_scope_host(cookie)
-            explicit_domain = str(cookie.get("domain") or "").strip()
-            google_family_scope = cls._is_google_family_cookie_host(scope_host)
-
-            if explicit_domain or not google_family_scope:
-                append_cookie(cookie)
-
-            if not google_family_scope:
-                continue
-
-            mirrored_cookie = dict(cookie)
-            mirrored_cookie.pop("domain", None)
-            mirrored_cookie["path"] = (
-                str(mirrored_cookie.get("path") or "/").strip() or "/"
-            )
-            mirrored_cookie["sameSite"] = "None"
-            mirrored_cookie["secure"] = True
-            for target_url in PERSONAL_GOOGLE_FAMILY_COOKIE_MIRROR_URLS:
-                append_cookie(
-                    {
-                    **mirrored_cookie,
-                    "url": target_url,
-                    }
-                )
-
-        return expanded
+        """保留同步 Cookie 的真实站点边界，兼容旧版镜像数据。"""
+        from .personal_cookie_policy import scoped_personal_cookies
+        return scoped_personal_cookies(raw_cookie)
 
     def _get_configured_browser_startup_cookie_text(self) -> Optional[str]:
         if not bool(getattr(config, "browser_startup_cookie_enabled", False)):
@@ -6996,53 +6944,9 @@ class BrowserCaptchaService:
     def _build_configured_browser_cookie_targets(
         cls, raw_cookie: Optional[str]
     ) -> list[Dict[str, Any]]:
-        """构建系统级浏览器启动 cookie，确保 Google / reCAPTCHA 首跳都能命中。"""
-        browser_cookies = build_browser_cookie_targets(
-            raw_cookie,
-            fallback_urls=list(PERSONAL_GOOGLE_FAMILY_COOKIE_MIRROR_URLS),
-        )
-        if not browser_cookies:
-            return []
-
-        expanded: list[Dict[str, Any]] = []
-        seen: set[str] = set()
-
-        def append_cookie(cookie: Dict[str, Any]) -> None:
-            stable_key = json.dumps(
-                cookie, ensure_ascii=True, sort_keys=True, separators=(",", ":")
-            )
-            if stable_key in seen:
-                return
-            seen.add(stable_key)
-            expanded.append(cookie)
-
-        for cookie in browser_cookies:
-            scope_host = cls._extract_cookie_scope_host(cookie)
-            explicit_domain = str(cookie.get("domain") or "").strip()
-            google_family_scope = cls._is_google_family_cookie_host(scope_host)
-
-            if explicit_domain or not google_family_scope:
-                append_cookie(cookie)
-
-            if not google_family_scope:
-                continue
-
-            mirrored_cookie = dict(cookie)
-            mirrored_cookie.pop("domain", None)
-            mirrored_cookie["path"] = (
-                str(mirrored_cookie.get("path") or "/").strip() or "/"
-            )
-            mirrored_cookie["sameSite"] = "None"
-            mirrored_cookie["secure"] = True
-            for target_url in PERSONAL_GOOGLE_FAMILY_COOKIE_MIRROR_URLS:
-                append_cookie(
-                    {
-                    **mirrored_cookie,
-                    "url": target_url,
-                    }
-                )
-
-        return expanded
+        """系统启动 Cookie 采用相同的站点边界。"""
+        from .personal_cookie_policy import scoped_personal_cookies
+        return scoped_personal_cookies(raw_cookie)
 
     def _forget_token_affinity_for_slot_locked(
         self,
@@ -7877,7 +7781,7 @@ class BrowserCaptchaService:
             return await _confirm_labs_surface(str(e), stage="navigate_timeout")
 
         if not await self._wait_for_document_ready(
-            tab, retries=20, interval_seconds=0.5
+            tab, retries=60, interval_seconds=0.5
         ):
             debug_logger.log_warning(
                 f"[BrowserCaptcha] labs 引导页未按时 ready ({label})"
@@ -8910,7 +8814,7 @@ class BrowserCaptchaService:
                 result = subprocess.run(
                     ["tasklist", "/FI", f"PID eq {int(pid)}"],
                     capture_output=True,
-                    text=True,
+                    text=True, encoding="utf-8", errors="replace",
                     timeout=8,
                 )
                 return str(int(pid)) in (result.stdout or "")
@@ -8930,7 +8834,7 @@ class BrowserCaptchaService:
                 result = subprocess.run(
                     ["taskkill", "/PID", str(int(pid)), "/T", "/F"],
                     capture_output=True,
-                    text=True,
+                    text=True, encoding="utf-8", errors="replace",
                     timeout=15,
                 )
                 return result.returncode == 0 or not self._is_pid_running(pid)
@@ -9002,45 +8906,17 @@ class BrowserCaptchaService:
         }
 
         if sys.platform.startswith("win"):
-            try:
-                result = subprocess.run(
-                    [
-                        "powershell",
-                        "-NoProfile",
-                        "-Command",
-                        (
-                            "Get-CimInstance Win32_Process | "
-                            "Where-Object { $_.Name -match '^(chrome|chromium|msedge)\\.exe$' } | "
-                            "Select-Object ProcessId,CommandLine | ConvertTo-Json -Compress"
-                        ),
-                    ],
-                    capture_output=True,
-                    text=True,
-                    timeout=15,
-                )
-                output = (result.stdout or "").strip()
-                if not output:
-                    return []
-                payload = json.loads(output)
-                if isinstance(payload, dict):
-                    payload = [payload]
-                for item in payload if isinstance(payload, list) else []:
-                    try:
-                        pid = int(item.get("ProcessId") or 0)
-                    except Exception:
+            # 直接使用 Python 枚举，仅匹配本插件已知的浏览器 profile 路径。
+            import psutil
+            for process in psutil.process_iter(["pid", "name", "cmdline"]):
+                try:
+                    if (process.info["name"] or "").lower() not in browser_names:
                         continue
-                    command_line = os.path.normcase(
-                        os.path.normpath(str(item.get("CommandLine") or ""))
-                    )
-                    if pid > 0 and any(
-                        profile_dir in command_line
-                        for profile_dir in normalized_profile_dirs
-                    ):
-                        found_pids.add(pid)
-            except Exception as e:
-                debug_logger.log_warning(
-                    f"[BrowserCaptcha] 扫描浏览器残留进程失败: {e}"
-                )
+                    command_line = os.path.normcase(os.path.normpath(" ".join(process.info["cmdline"] or [])))
+                    if any(profile in command_line for profile in normalized_profile_dirs):
+                        found_pids.add(process.pid)
+                except (psutil.Error, OSError):
+                    continue
             return sorted(found_pids)
 
         proc_dir = Path("/proc")
@@ -10034,7 +9910,34 @@ class BrowserCaptchaService:
                     state.finishedAt = 0;
                     state.attempts = Number(state.attempts || 0) + 1;
                     const script = document.createElement('script');
-                    script.src = urls[index];
+                    const pageNonce = document.querySelector('script[nonce]')?.nonce;
+                    if (pageNonce) script.nonce = pageNonce;
+                    try {{
+                        let source = urls[index];
+                        if (window.trustedTypes) {{
+                            const policyKey = '__flow2apiRecaptchaScriptPolicy';
+                            if (!window[policyKey]) {{
+                                window[policyKey] = trustedTypes.createPolicy('flow2api-recaptcha', {{
+                                    createScriptURL(value) {{
+                                        const candidate = new URL(value);
+                                        if (candidate.protocol !== 'https:' ||
+                                            !['www.google.com', 'www.recaptcha.net'].includes(candidate.hostname) ||
+                                            !['/recaptcha/enterprise.js', '/recaptcha/api.js'].includes(candidate.pathname)) {{
+                                            throw new TypeError('Untrusted reCAPTCHA script URL');
+                                        }}
+                                        return value;
+                                    }},
+                                }});
+                            }}
+                            source = window[policyKey].createScriptURL(source);
+                        }}
+                        script.src = source;
+                    }} catch (error) {{
+                        state.status = 'error';
+                        state.error = 'reCAPTCHA script assignment failed: ' + String(error);
+                        state.finishedAt = now();
+                        return;
+                    }}
                     script.async = true;
                     let settled = false;
                     const finish = (status, error) => {{

@@ -74,3 +74,10 @@ GFlow 与浏览器扩展本身免费。Google Flow 订阅和生成积分、付�
 ## 来源
 
 GFlow 内嵌的模型适配代码参考 [TheSmallHanCat/flow2api](https://github.com/TheSmallHanCat/flow2api)，保留其 MIT 声明。GFlow 登录助手独立实现，未复制未声明许可证的第三方浏览器扩展源码。
+
+
+### Generation lifecycle repair
+
+Generation requests are attempted once and have bounded CAPTCHA/overall timeouts. Windows clients can stop their own request through a request-specific named pipe; queued cancellation cannot close the active browser. The dedicated browser runs headless and is reclaimed after the task. Python requires psutil for process ownership checks.
+
+Cookie injection preserves explicit site scopes and handles legacy three-site mirrors without copying Flow-only OSID cookies to Google Accounts. Account sync and quota checks do not verify CAPTCHA readiness. Current local preflight reaches the signed-in Flow projects page, but reCAPTCHA script readiness still times out; real GFlow generation is not verified by this repair.

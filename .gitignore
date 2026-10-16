@@ -11,3 +11,5 @@ data_test/
 *.so
 
 !downloads/GFlow-browser-extension.zip
+
+logs.txt

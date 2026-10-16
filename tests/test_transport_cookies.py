@@ -33,3 +33,11 @@ class TransportRequestTest(unittest.IsolatedAsyncioTestCase):
             result = await client._make_text_request("POST", "https://flow.google.com/_/AiSandboxAngularFrontend/data/batchexecute", headers={"Cookie":header}, raw_body="f.req=synthetic", redact_sensitive_logs=True)
         self.assertEqual(result,"synthetic-response")
         self.assertEqual(session.post.call_args.kwargs["headers"]["Cookie"],header)
+
+class SingleAttemptRegression(unittest.TestCase):
+    def test_captcha_failure_cannot_expand_an_explicit_single_attempt(self):
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        client=FlowClient(None)
+        with patch("src.services.flow_client.config", SimpleNamespace(flow_max_retries=1,browser_captcha_generation_retries=6)):
+            self.assertEqual(client._resolve_generation_retry_budget(1, "reCAPTCHA evaluation failed"),1)

@@ -1053,6 +1053,9 @@ class _FlowClientBase(FlowFrontendMixin):
         self, base_max_retries: int, error: Optional[Union[Exception, str]] = None
     ) -> int:
         """计算当前生成链路允许的总重试次数。"""
+        # 明确配置单次请求时，不因验证码失败扩大生成重试次数。
+        if config.flow_max_retries <= 1:
+            return 1
         effective_max_retries = max(1, int(base_max_retries or 1))
         if error is None:
             return effective_max_retries
@@ -1805,7 +1808,7 @@ class _FlowClientBase(FlowFrontendMixin):
                 frontend_cookie_storage = ""
 
         # The frontend attempt is extra; legacy keeps its configured retry budget.
-        max_retries = config.flow_max_retries + (1 if frontend_cookie_storage else 0)
+        max_retries = config.flow_max_retries + (1 if frontend_cookie_storage and config.flow_max_retries > 1 else 0)
         last_error = None
         perf_trace: Dict[str, Any] = {
             "max_retries": max_retries,

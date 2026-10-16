@@ -20,6 +20,7 @@ REQUIRED_MODULES = [
     "httpx",
     "tomli",
     "bcrypt",
+    "psutil",
 ]
 
 def check_environment():

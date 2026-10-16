@@ -12,6 +12,10 @@ import os
 import secrets
 import sys
 import traceback
+
+# 专用浏览器在后台运行，不打开空白的未登录窗口。
+os.environ.setdefault("PERSONAL_BROWSER_HEADLESS", "1")
+os.environ.setdefault("PYTHONDONTWRITEBYTECODE", "1")
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -112,9 +116,19 @@ class GFlowService:
             await self.db.check_and_migrate_db(raw_cfg)
 
         await self.db.reload_config_to_memory()
+        # 一次用户生成只尝试一次；防止失败重启浏览器并重复提交。
+        config.set_flow_max_retries(1)
 
         self.proxy_manager = ProxyManager(self.db)
         self.flow_client = FlowClient(self.proxy_manager, self.db)
+        original_captcha = self.flow_client._get_recaptcha_token
+        async def bounded_captcha(*args, **kwargs):
+            try:
+                async with asyncio.timeout(60):
+                    return await original_captcha(*args, **kwargs)
+            except asyncio.TimeoutError as error:
+                raise RuntimeError('Google Flow 验证码步骤超过 60 秒，已停止自动重试；请检查网络及账号会话') from error
+        self.flow_client._get_recaptcha_token = bounded_captcha
         self.token_manager = TokenManager(self.db, self.flow_client)
         self.concurrency_manager = ConcurrencyManager()
         self.load_balancer = LoadBalancer(self.token_manager, self.concurrency_manager)
@@ -418,7 +432,10 @@ async def main():
     else:
         data_dir = Path(__file__).resolve().parent.parent / "data"
 
+    from generation_lifecycle import GenerationLifecycle
     service = GFlowService(data_dir)
+    lifecycle = GenerationLifecycle(service)
+    await lifecycle.start()
     service.send_line({"ready": True, "pid": os.getpid(), "data_dir": str(data_dir)})
 
     loop = asyncio.get_running_loop()
@@ -446,7 +463,7 @@ async def main():
             break
 
         if cmd == "chat_completion":
-            asyncio.create_task(service.handle_chat_completion(req_id, params))
+            lifecycle.submit(req_id, params)
             continue
 
         handler = getattr(service, f"handle_{cmd}", None)
@@ -460,6 +477,8 @@ async def main():
                 service.send_line({"id": req_id, "done": True, "error": {"message": str(e), "traceback": tb}})
         else:
             service.send_line({"id": req_id, "done": True, "error": {"message": f"Unknown command: {cmd}"}})
+
+    await lifecycle.shutdown()
 
 
 if __name__ == "__main__":
