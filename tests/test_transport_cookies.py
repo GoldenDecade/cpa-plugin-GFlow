@@ -41,3 +41,25 @@ class SingleAttemptRegression(unittest.TestCase):
         client=FlowClient(None)
         with patch("src.services.flow_client.config", SimpleNamespace(flow_max_retries=1,browser_captcha_generation_retries=6)):
             self.assertEqual(client._resolve_generation_retry_budget(1, "reCAPTCHA evaluation failed"),1)
+
+class FrontendSessionRegression(unittest.TestCase):
+    def test_frontend_marker_does_not_refresh_immediately(self):
+        from datetime import datetime,timedelta,timezone
+        from types import SimpleNamespace
+        from src.services.token_manager import TokenManager
+        manager=TokenManager.__new__(TokenManager)
+        manager.flow_client=SimpleNamespace(FRONTEND_ACCESS_TOKEN="frontend-marker")
+        token=SimpleNamespace(id=1,at="frontend-marker",at_expires=datetime.now(timezone.utc)+timedelta(minutes=55))
+        self.assertFalse(manager._should_refresh_at(token))
+        token.at_expires=datetime.now(timezone.utc)+timedelta(minutes=3)
+        self.assertTrue(manager._should_refresh_at(token))
+
+    def test_rpc_uses_the_same_scoped_cookie_policy_as_the_browser(self):
+        import asyncio,json
+        client=FlowClient(None)
+        original=[{"name":name,"value":"fake-"+name,"url":"https://"+host+"/","path":"/"}
+                  for name in ["SID","OSID"] for host in ["flow.google.com","www.google.com","www.recaptcha.net"]]
+        result=json.loads(asyncio.run(client._resolve_flow_frontend_cookie_storage(json.dumps(original))))
+        self.assertEqual(len(result),2)
+        self.assertEqual(result[0]["domain"],".google.com")
+        self.assertEqual(result[1]["url"],"https://flow.google.com/")

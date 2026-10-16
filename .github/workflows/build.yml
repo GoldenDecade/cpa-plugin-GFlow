@@ -40,6 +40,7 @@ jobs:
           python -B -m unittest discover -s tests -p test_generation_lifecycle.py -v
           python -B -m unittest discover -s tests -p test_personal_cookie_targets.py -v
           python -B -m unittest discover -s tests -p test_recaptcha_bootstrap.py -v
+          python -B -m unittest discover -s tests -p test_media_response.py -v
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}

@@ -50,6 +50,10 @@ class FlowFrontendMixin:
                 if token
                 else ""
             )
+        if cookie_storage:
+            # RPC 和浏览器必须使用同一份站点作用域，旧版镜像会产生重复登录 Cookie。
+            from .personal_cookie_policy import scoped_personal_cookies
+            cookie_storage = json.dumps(scoped_personal_cookies(cookie_storage), separators=(",", ":"))
         return cookie_storage
 
     @staticmethod

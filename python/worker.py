@@ -387,6 +387,8 @@ class GFlowService:
 
             if is_stream:
                 async for chunk in _iterate_openai_stream(normalized, base_url_override):
+                    from media_response import inline_cached_images
+                    chunk = inline_cached_images(chunk, self.tmp_dir)
                     self.send_line({
                         "id": req_id,
                         "stream": True,
@@ -406,6 +408,17 @@ class GFlowService:
                     video_media_id=normalized.video_media_id,
                 )
                 payload = _parse_handler_result(raw_chunk)
+                if payload.get("error"):
+                    from src.api.routes import _get_error_status_code
+                    error = payload["error"]
+                    message = error.get("message", "Generation failed") if isinstance(error, dict) else str(error)
+                    self.send_line({"id": req_id, "done": True, "error": {
+                        "message": message, "status_code": _get_error_status_code(payload),
+                        "type": "generation_error",
+                    }})
+                    return
+                from media_response import inline_cached_images
+                payload = inline_cached_images(payload, self.tmp_dir)
                 self.send_line({
                     "id": req_id,
                     "done": True,

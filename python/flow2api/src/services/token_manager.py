@@ -646,7 +646,10 @@ class TokenManager:
             at_expires_aware = token.at_expires
 
         time_until_expiry = at_expires_aware - now
-        if time_until_expiry.total_seconds() < 3600:
+        # 当前 Flow 的本地前端会话有效期为 55 分钟，不能沿用 60 分钟提前刷新。
+        frontend_marker = getattr(self.flow_client, "FRONTEND_ACCESS_TOKEN", None)
+        refresh_margin = 300 if frontend_marker and token.at == frontend_marker else 3600
+        if time_until_expiry.total_seconds() < refresh_margin:
             debug_logger.log_info(
                 f"[AT_CHECK] Token {token.id}: AT即将过期 "
                 f"(剩余 {time_until_expiry.total_seconds():.0f} 秒),需要刷新"
