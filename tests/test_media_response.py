@@ -15,6 +15,8 @@ class MediaResponseRegression(unittest.TestCase):
             name="a"*32+".jpg";body=b"synthetic-jpeg"
             Path(tmp,name).write_bytes(body)
             url="/v0/resource/plugins/gflow/tmp/"+name
+            video="/v0/resource/plugins/gflow/tmp/"+"b"*32+".mp4"
+            self.assertEqual(module.inline_cached_images(video,tmp),video.replace("/tmp/","/tmp?file="))
             result=module.inline_cached_images({"url":url,"choices":[{"message":{"content":"![image]("+url+")"}}]},tmp)
             expected="data:image/jpeg;base64,"+base64.b64encode(body).decode()
             self.assertEqual(result["url"],expected)

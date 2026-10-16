@@ -22,4 +22,11 @@ def inline_cached_images(value, cache_dir):
         if isinstance(item, dict): return {key:walk(child) for key,child in item.items()}
         if isinstance(item, list): return [walk(child) for child in item]
         return item
-    return walk(value)
+    value = walk(value)
+    media = re.compile(r"/v0/resource/plugins/gflow/tmp/([a-f0-9]{32}\.(?:png|jpg|jpeg|webp|mp4|webm|mov))")
+    def route(item):
+        if isinstance(item,str): return media.sub(lambda m:"/v0/resource/plugins/gflow/tmp?file="+m.group(1),item)
+        if isinstance(item,dict): return {key:route(child) for key,child in item.items()}
+        if isinstance(item,list): return [route(child) for child in item]
+        return item
+    return route(value)

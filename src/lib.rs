@@ -540,14 +540,17 @@ fn handle_management_handle(req: &[u8]) -> Result<Vec<u8>, String> {
         return serde_json::to_vec(&out).map_err(|e| e.to_string());
     }
 
-    // 2. Serve cached media asset resource: /v0/resource/plugins/gflow/tmp/<filename>
-    if path.contains("/plugins/gflow/tmp/") {
-        let filename = path.split("/tmp/").last().unwrap_or("").trim();
-        // sanitize filename to avoid directory traversal
-        let clean_filename = Path::new(filename).file_name().and_then(|s| s.to_str()).unwrap_or("");
-        if clean_filename.is_empty() {
+    // The host dispatches exact resource paths; media filenames belong in Query.
+    if path.ends_with("/plugins/gflow/tmp") || path.contains("/plugins/gflow/tmp/") {
+        let filename = if path.ends_with("/tmp") {
+            req_val["Query"]["file"].as_array().and_then(|items| items.first())
+                .and_then(|item| item.as_str()).or_else(|| req_val["Query"]["file"].as_str()).unwrap_or("")
+        } else {
+            path.split("/tmp/").last().unwrap_or("")
+        };
+        let Some(clean_filename) = cached_media_name(filename) else {
             return Ok(management_error(404, "File not found"));
-        }
+        };
 
         let tmp_path = PathBuf::from(r"D:\zuhui\EasyCLIProxyAPI-main\EasyCLIProxyAPI-main\cpa-plugin-GFlow\data\tmp").join(clean_filename);
         if !tmp_path.exists() {
@@ -671,5 +674,25 @@ fn write_error(response: *mut CliproxyBuffer, code: &str, message: &str, status:
     });
     if let Ok(bytes) = serde_json::to_vec(&err) {
         abi::write_response(response, &bytes);
+    }
+}
+
+fn cached_media_name(filename: &str) -> Option<&str> {
+    let (stem, extension) = filename.rsplit_once('.')?;
+    if stem.len() != 32 || !stem.bytes().all(|c| c.is_ascii_hexdigit())
+        || !matches!(extension, "png" | "jpg" | "jpeg" | "webp" | "mp4" | "webm" | "mov") {
+        return None;
+    }
+    Some(filename)
+}
+
+#[cfg(test)]
+mod cached_media_regressions {
+    use super::*;
+    #[test]
+    fn cached_media_route_rejects_paths_and_control_files() {
+        assert!(cached_media_name("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.mp4").is_some());
+        assert!(cached_media_name("../aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.jpg").is_none());
+        assert!(cached_media_name("control-00000000-0000-0000-0000-000000000001-0.json").is_none());
     }
 }
