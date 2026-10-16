@@ -121,14 +121,7 @@ class GFlowService:
 
         self.proxy_manager = ProxyManager(self.db)
         self.flow_client = FlowClient(self.proxy_manager, self.db)
-        original_captcha = self.flow_client._get_recaptcha_token
-        async def bounded_captcha(*args, **kwargs):
-            try:
-                async with asyncio.timeout(60):
-                    return await original_captcha(*args, **kwargs)
-            except asyncio.TimeoutError as error:
-                raise RuntimeError('Google Flow 验证码步骤超过 60 秒，已停止自动重试；请检查网络及账号会话') from error
-        self.flow_client._get_recaptcha_token = bounded_captcha
+        # 保留 flow2api 自身的分步骤超时；整项任务由 GenerationManager 截止和取消。
         self.token_manager = TokenManager(self.db, self.flow_client)
         self.concurrency_manager = ConcurrencyManager()
         self.load_balancer = LoadBalancer(self.token_manager, self.concurrency_manager)
@@ -181,7 +174,7 @@ class GFlowService:
             "active_tokens": len(active),
             "total_credits": total_credits,
             "extension_sync": getattr(self, "last_extension_sync", None),
-            "sync_revision": "20261016.8",
+            "sync_revision": "20261016.9",
         }
 
     async def handle_list_tokens(self, _params: Dict[str, Any]) -> Dict[str, Any]:
