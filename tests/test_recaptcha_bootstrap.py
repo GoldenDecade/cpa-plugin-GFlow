@@ -27,6 +27,24 @@ Promise.resolve(vm.runInContext(SOURCE,context)).then(result=>{assert.equal(resu
 """
         subprocess.run([node,"-e",harness.replace("SOURCE",json.dumps(script))],check=True,capture_output=True,text=True)
 
+    def test_fingerprint_script_executes_instead_of_returning_a_function(self):
+        source=ROOT/"python/flow2api/src/services/browser_captcha_personal.py"
+        tree=ast.parse(source.read_text(encoding="utf-8"))
+        cls=next(n for n in tree.body if isinstance(n,ast.ClassDef) and n.name=="BrowserCaptchaService")
+        method=next(n for n in cls.body if isinstance(n,ast.AsyncFunctionDef) and n.name=="_extract_tab_fingerprint")
+        call=next(n for n in ast.walk(method) if isinstance(n,ast.Call) and isinstance(n.func,ast.Attribute) and n.func.attr=="_tab_evaluate")
+        script=call.args[1].value
+        node=os.environ.get("GFLOW_TEST_NODE") or shutil.which("node")
+        if not node: self.skipTest("Node.js required")
+        harness="""
+const vm=require('node:vm'),assert=require('node:assert/strict');
+const context={navigator:{userAgent:'synthetic-UA',language:'en',languages:['en']},window:{},screen:{},Intl};
+const result=vm.runInNewContext(SOURCE,context);
+assert.equal(typeof result,'object');
+assert.equal(result.user_agent,'synthetic-UA');
+"""
+        subprocess.run([node,"-e",harness.replace("SOURCE",json.dumps(script))],check=True,capture_output=True,text=True)
+
     def test_bootstrap_urls_enable_upstream_trusted_types(self):
         source=ROOT/"python/flow2api/src/services/browser_captcha_personal.py"
         tree=ast.parse(source.read_text(encoding="utf-8"))

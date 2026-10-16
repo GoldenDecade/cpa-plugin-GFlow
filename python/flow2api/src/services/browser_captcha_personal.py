@@ -12369,7 +12369,7 @@ class BrowserCaptchaService:
             fingerprint = await self._tab_evaluate(
                 tab,
                 """
-                () => {
+                (() => {
                     const ua = navigator.userAgent || "";
                     const lang = navigator.language || "";
                     const languages = Array.isArray(navigator.languages) ? navigator.languages.slice() : [];
@@ -12419,7 +12419,7 @@ class BrowserCaptchaService:
                         screen_avail_width: Number(screen.availWidth || 0),
                         screen_avail_height: Number(screen.availHeight || 0),
                     };
-                }
+                })()
             """,
                 label="extract_tab_fingerprint",
                 timeout_seconds=8.0,
