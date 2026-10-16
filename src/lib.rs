@@ -2,7 +2,7 @@ mod abi;
 mod worker;
 
 use std::ffi::{c_char, c_void, CStr};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock};
 use abi::{CliproxyBuffer, CliproxyHostApi, CliproxyPluginApi, ABI_VERSION};
 use worker::WorkerManager;
@@ -419,7 +419,7 @@ fn handle_executor_stream(req: &[u8]) -> Result<Vec<u8>, String> {
 
     if !stream_id.is_empty() {
         let sid = stream_id.to_string();
-        get_worker().execute_stream(body_json, |chunk| {
+        let stream_result = get_worker().execute_stream(body_json, |chunk| {
             let b64 = base64::engine::general_purpose::STANDARD.encode(chunk.as_bytes());
             let emit_req = serde_json::json!({
                 "stream_id": sid,
@@ -429,15 +429,16 @@ fn handle_executor_stream(req: &[u8]) -> Result<Vec<u8>, String> {
                 abi::call_host("host.stream.emit", &emit_bytes);
             }
             Ok(())
-        })?;
+        });
 
         let close_req = serde_json::json!({
             "stream_id": sid,
-            "error": ""
+            "error": stream_result.as_ref().err().cloned().unwrap_or_default()
         });
         if let Ok(close_bytes) = serde_json::to_vec(&close_req) {
             abi::call_host("host.stream.close", &close_bytes);
         }
+        stream_result?;
     }
 
     let out = serde_json::json!({

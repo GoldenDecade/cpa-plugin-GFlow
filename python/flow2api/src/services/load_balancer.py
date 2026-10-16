@@ -377,7 +377,12 @@ class LoadBalancer:
         """给出更明确的“无可用账号”原因，优先用于分辨率/tier 档位提示。"""
         active_tokens = await self.token_manager.get_active_tokens()
         if not active_tokens:
-            return None
+            tokens = await self.token_manager.get_all_tokens()
+            if any(getattr(t, "ban_reason", None) == "session_expired" for t in tokens):
+                return "GFlow 的 Google Cookie 已失效，请通过登录助手重新同步 Cookie。"
+            if tokens:
+                return "GFlow 账号当前已停用，请在插件控制台检查账号状态。"
+            return "尚未添加 GFlow 账号，请在插件控制台同步 Google Flow 账号。"
 
         required_tier = get_required_paygate_tier_for_model(model)
         supported_tokens = []

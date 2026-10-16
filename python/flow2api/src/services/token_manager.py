@@ -755,10 +755,25 @@ class TokenManager:
                 )
                 return False
 
-            debug_logger.log_error(
-                f"[AT_REFRESH] Token {token_id}: all refresh attempts failed, disabling token"
+            # A local browser failure or upstream rejection does not prove that
+            # account credentials expired. Only explicit authentication failure
+            # may persistently disable an account.
+            auth_markers = (
+                "401", "UNAUTHENTICATED", "Google Cookie 已失效",
+                "Flow 登录已失效", "Flow 登录认证失败",
             )
-            await self.disable_token(token_id)
+            if any(marker in str(reason) for reason in failure_reasons for marker in auth_markers):
+                debug_logger.log_error(
+                    f"[AT_REFRESH] Token {token_id}: login expired; Cookie synchronization required"
+                )
+                await self.db.update_token(
+                    token_id, is_active=False, ban_reason="session_expired",
+                    banned_at=datetime.now(timezone.utc),
+                )
+            else:
+                debug_logger.log_warning(
+                    f"[AT_REFRESH] Token {token_id}: unconfirmed refresh failure; keep account enabled"
+                )
             self._clear_at_validation_cache(token_id)
             return False
 

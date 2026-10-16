@@ -43,7 +43,7 @@ class Tests(unittest.IsolatedAsyncioTestCase):
         await asyncio.wait_for(asyncio.gather(*list(self.manager.tasks)),2)
         self.assertEqual(self.manager.controls,{})
         self.assertEqual(list(self.service.tmp_dir.glob('control-*.json')),[])
-        self.assertTrue(any('cancelled' in m.get('chunk','') for m in self.service.messages))
+        self.assertTrue(any(m.get('error', {}).get('code') == 'cancelled' for m in self.service.messages))
     async def test_windows_pipe_stops_only_the_named_task(self):
         import os
         if os.name != 'nt': self.skipTest('Windows-only pipe')
@@ -55,7 +55,7 @@ class Tests(unittest.IsolatedAsyncioTestCase):
         await asyncio.wait_for(asyncio.to_thread(send),2)
         await asyncio.wait_for(asyncio.gather(*list(self.manager.tasks)),2)
         self.assertEqual(self.manager.controls,{})
-        self.assertTrue(any('cancelled' in m.get('chunk','') for m in self.service.messages))
+        self.assertTrue(any(m.get('error', {}).get('code') == 'cancelled' for m in self.service.messages))
 
     async def test_cancelling_queued_job_does_not_stop_active_job(self):
         self.manager.submit('active',{'stream':True,'model':'gflow-nano-banana-2-lite'})

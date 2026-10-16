@@ -61,7 +61,9 @@ impl WorkerManager {
         let mut lock = self.inner.lock().map_err(|e| e.to_string())?;
         let mut last_err = String::new();
 
-        for _ in 0..2 {
+        // Never replay a paid generation when transport loses its receipt.
+        let attempts = if cmd == "chat_completion" { 1 } else { 2 };
+        for _ in 0..attempts {
             if let Err(e) = lock.ensure_started() {
                 last_err = e;
                 continue;
@@ -106,7 +108,7 @@ impl WorkerManager {
             }
 
             if resp_line.trim().is_empty() {
-                last_err = "Worker returned empty output".to_string();
+                last_err = "Worker connection ended before a generation receipt was confirmed; no automatic generation retry".to_string();
                 lock.stop();
                 continue;
             }
@@ -114,7 +116,7 @@ impl WorkerManager {
             let parsed: serde_json::Value = match serde_json::from_str(resp_line.trim()) {
                 Ok(v) => v,
                 Err(e) => {
-                    last_err = format!("Failed to parse worker response: {e}; raw: {resp_line}");
+                    last_err = format!("Failed to parse worker response: {e}");
                     lock.stop();
                     continue;
                 }
@@ -156,7 +158,7 @@ impl WorkerManager {
         loop {
             let mut chunk_line = String::new();
             if reader.read_line(&mut chunk_line).map_err(|e| e.to_string())? == 0 {
-                break;
+                return Err("GFlow stream ended without a completion receipt; generation result is unknown".to_string());
             }
             let trimmed = chunk_line.trim();
             if trimmed.is_empty() {
@@ -284,5 +286,30 @@ impl WorkerInner {
 impl Drop for WorkerInner {
     fn drop(&mut self) {
         self.stop();
+    }
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn fixture() -> WorkerManager {
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        WorkerManager::new(root.join("data/tmp"), root.join("tests/worker_failure_fixture.py"))
+    }
+
+    #[test]
+    fn upstream_failure_is_an_executor_error() {
+        let worker = fixture();
+        let result = worker.execute_stream(serde_json::json!({"stream": true}), |_| Ok(()));
+        assert_eq!(result.unwrap_err(), "synthetic upstream rejection");
+        worker.shutdown();
+    }
+
+    #[test]
+    fn unexpected_stream_eof_is_not_a_success() {
+        let worker = fixture();
+        let result = worker.execute_stream(serde_json::json!({"stream": true, "force_eof": true}), |_| Ok(()));
+        assert!(result.unwrap_err().contains("without a completion receipt"));
+        worker.shutdown();
     }
 }

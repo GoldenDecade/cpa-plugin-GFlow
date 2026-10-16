@@ -136,11 +136,13 @@ class GenerationLifecycle:
             task.cancel()
 
     def fail(self, req_id, stream, code, message):
-        if stream:
-            self.service.send_line({'id': req_id, 'stream': True, 'chunk': 'data: ' + json.dumps({'error': {'code': code, 'message': message}}, ensure_ascii=False) + '\n\ndata: [DONE]\n\n'})
-            self.service.send_line({'id': req_id, 'stream': True, 'done': True})
-        else:
-            self.service.send_line({'id': req_id, 'done': True, 'error': {'code': code, 'message': message, 'status_code': 408 if code == 'generation_timeout' else 499}})
+        # Every failure must reach the native executor error channel, including
+        # cancellation/timeouts after streaming has already begun.
+        self.service.send_line({
+            'id': req_id, 'done': True,
+            'error': {'code': code, 'message': message,
+                      'status_code': 408 if code == 'generation_timeout' else 499},
+        })
 
     async def run(self, req_id, params):
         token = secrets.token_urlsafe(32)

@@ -181,7 +181,7 @@ class GFlowService:
             "active_tokens": len(active),
             "total_credits": total_credits,
             "extension_sync": getattr(self, "last_extension_sync", None),
-            "sync_revision": "20261016.5",
+            "sync_revision": "20261016.6",
         }
 
     async def handle_list_tokens(self, _params: Dict[str, Any]) -> Dict[str, Any]:
@@ -365,16 +365,10 @@ class GFlowService:
 
         active_tokens = await self.token_manager.get_active_tokens()
         if not active_tokens:
-            err_msg = "没有可用的 GFlow 账号，请先在 EasyCPA 插件控制台 (GFlow) 导入或添加 Google Flow Cookie 账号"
+            from generation_errors import account_pool_error
             self.send_line({
-                "id": req_id,
-                "done": True,
-                "error": {
-                    "message": err_msg,
-                    "type": "no_active_tokens",
-                    "code": "gflow_empty_account_pool",
-                    "status_code": 400,
-                }
+                "id": req_id, "done": True,
+                "error": account_pool_error(await self.token_manager.get_all_tokens()),
             })
             return
 
@@ -387,6 +381,13 @@ class GFlowService:
 
             if is_stream:
                 async for chunk in _iterate_openai_stream(normalized, base_url_override):
+                    from generation_errors import generation_error
+                    error = generation_error(chunk)
+                    if error:
+                        # Send failure through the native executor error channel.
+                        # An error inside a normal SSE chunk is counted as success by the host.
+                        self.send_line({"id": req_id, "done": True, "error": error})
+                        return
                     from media_response import inline_cached_images
                     chunk = inline_cached_images(chunk, self.tmp_dir)
                     self.send_line({
@@ -408,14 +409,10 @@ class GFlowService:
                     video_media_id=normalized.video_media_id,
                 )
                 payload = _parse_handler_result(raw_chunk)
-                if payload.get("error"):
-                    from src.api.routes import _get_error_status_code
-                    error = payload["error"]
-                    message = error.get("message", "Generation failed") if isinstance(error, dict) else str(error)
-                    self.send_line({"id": req_id, "done": True, "error": {
-                        "message": message, "status_code": _get_error_status_code(payload),
-                        "type": "generation_error",
-                    }})
+                from generation_errors import generation_error
+                error = generation_error(payload)
+                if error:
+                    self.send_line({"id": req_id, "done": True, "error": error})
                     return
                 from media_response import inline_cached_images
                 payload = inline_cached_images(payload, self.tmp_dir)
