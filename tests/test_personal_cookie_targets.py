@@ -5,7 +5,14 @@ import unittest
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
 sys.path[:0]=[str(ROOT/"python"),str(ROOT/"python/flow2api")]
-from src.services.personal_cookie_policy import scoped_personal_cookies
+import importlib.util
+utility=ROOT/"python/flow2api/src/services/browser_cookie_utils.py"
+spec=importlib.util.spec_from_file_location("cookie_utils_under_test",utility)
+utils=importlib.util.module_from_spec(spec); spec.loader.exec_module(utils)
+source=ROOT/"python/flow2api/src/services/personal_cookie_policy.py"
+namespace={"__name__":"cookie_policy_under_test","parse_browser_cookie_payload":utils.parse_browser_cookie_payload}
+exec(compile(source.read_text(encoding="utf-8").replace("    from .browser_cookie_utils import parse_browser_cookie_payload",""),str(source),"exec"),namespace)
+scoped_personal_cookies=namespace["scoped_personal_cookies"]
 
 class CookieRegression(unittest.TestCase):
     def test_raw_header_places_login_on_parent_and_osid_only_on_flow(self):

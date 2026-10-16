@@ -11,6 +11,22 @@ from types import SimpleNamespace
 
 ROOT=Path(__file__).resolve().parents[1]
 class ScriptRegression(unittest.TestCase):
+    def test_score_key_executes_without_rendering_the_document_root(self):
+        import importlib.util
+        source=ROOT/"python/flow2api/src/services/recaptcha_runtime.py"
+        spec=importlib.util.spec_from_file_location("runtime_under_test",source)
+        runtime=importlib.util.module_from_spec(spec);spec.loader.exec_module(runtime)
+        script=runtime.build_recaptcha_execute_script("synthetic-key","IMAGE_GENERATION",1000)
+        node=os.environ.get("GFLOW_TEST_NODE") or shutil.which("node")
+        if not node: self.skipTest("Node.js required")
+        harness=r"""
+const vm=require('node:vm'),assert=require('node:assert/strict');
+const enterprise={render(){throw new Error('Must not render document root')},execute(key,options){assert.equal(key,'synthetic-key');assert.equal(options.action,'IMAGE_GENERATION');return Promise.resolve('synthetic-token')}};
+const context=vm.createContext({window:{grecaptcha:{enterprise},__flow2apiTrustedRecaptchaExecute:enterprise.execute},location:{href:'https://flow.google.com/projects'},setTimeout,clearTimeout});
+Promise.resolve(vm.runInContext(SOURCE,context)).then(result=>{assert.equal(result.ok,true);assert.equal(result.token,'synthetic-token')}).catch(e=>{console.error(e);process.exitCode=1});
+"""
+        subprocess.run([node,"-e",harness.replace("SOURCE",json.dumps(script))],check=True,capture_output=True,text=True)
+
     def test_bootstrap_urls_enable_upstream_trusted_types(self):
         source=ROOT/"python/flow2api/src/services/browser_captcha_personal.py"
         tree=ast.parse(source.read_text(encoding="utf-8"))

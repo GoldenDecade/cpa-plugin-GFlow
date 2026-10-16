@@ -100,32 +100,10 @@ RECAPTCHA_EXECUTE_SOURCE = r"""(async (siteKey, requestedAction, timeoutMs) => {
                 return { ok: false, error: 'reCAPTCHA execute is unavailable' };
             }
 
-            let executeTarget = siteKey;
-            try {
-                if (
-                    !capturedExecute &&
-                    window.grecaptcha &&
-                    window.grecaptcha.enterprise &&
-                    typeof window.grecaptcha.enterprise.render === 'function' &&
-                    window.__flow2apiRecaptchaClientId === undefined
-                ) {
-                    window.__flow2apiRecaptchaClientId =
-                        window.grecaptcha.enterprise.render(
-                            document.documentElement,
-                            { sitekey: siteKey, action: requestedAction }
-                        );
-                }
-                if (window.__flow2apiRecaptchaClientId !== undefined) {
-                    executeTarget = window.__flow2apiRecaptchaClientId;
-                }
-            } catch (renderError) {
-                return {
-                    ok: false,
-                    error: renderError && renderError.message
-                        ? renderError.message
-                        : String(renderError)
-                };
-            }
+            // Flow uses a score-based Enterprise key. Its execute API accepts
+            // the site key directly; rendering the populated document root
+            // throws "reCAPTCHA placeholder element must be empty".
+            const executeTarget = siteKey;
 
             try {
                 const token = await new Promise((resolve, reject) => {
