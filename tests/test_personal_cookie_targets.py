@@ -34,4 +34,23 @@ class CookieRegression(unittest.TestCase):
         self.assertEqual(result[0]["domain"],".google.com")
         self.assertEqual(result[1]["url"],"https://flow.google.com/")
 
+class BrowserExportRegression(unittest.TestCase):
+    def test_equal_flow_and_parent_login_cookies_do_not_repeat_in_request(self):
+        original = [
+            {"name": "SID", "value": "same", "url": "https://flow.google.com/", "path": "/"},
+            {"name": "SID", "value": "same", "domain": ".google.com", "path": "/"},
+            {"name": "OSID", "value": "flow", "url": "https://flow.google.com/", "path": "/"},
+        ]
+        result = scoped_personal_cookies(json.dumps(original))
+        self.assertEqual(len(result), 2)
+        self.assertEqual(result[0]["domain"], ".google.com")
+        self.assertEqual(result[1]["name"], "OSID")
+
+    def test_distinct_host_and_parent_values_remain_scoped(self):
+        original = [
+            {"name": "SID", "value": "host", "url": "https://flow.google.com/", "path": "/"},
+            {"name": "SID", "value": "parent", "domain": ".google.com", "path": "/"},
+        ]
+        self.assertEqual(scoped_personal_cookies(json.dumps(original)), original)
+
 if __name__=="__main__": unittest.main()

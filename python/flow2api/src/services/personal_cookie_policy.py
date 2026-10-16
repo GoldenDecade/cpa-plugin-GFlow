@@ -37,4 +37,21 @@ def scoped_personal_cookies(raw_cookie):
                 cookie["url"] = "https://flow.google.com/"
         identity = (cookie["name"], cookie.get("domain") or cookie.get("url"), cookie.get("path", "/"))
         result[identity] = cookie
-    return list(result.values())
+    normalized = list(result.values())
+    parent_logins = {
+        (c["name"], c["value"], c.get("path", "/"))
+        for c in normalized
+        if c["name"] in SHARED_LOGIN_NAMES and c.get("domain") == ".google.com"
+    }
+    # Browser refresh can export both a legacy Flow host copy and the actual
+    # parent login Cookie. Equal values are redundant; differing values retain
+    # their original host boundary.
+    return [
+        c for c in normalized
+        if not (
+            c["name"] in SHARED_LOGIN_NAMES
+            and (urlparse(c.get("url", "")).hostname == "flow.google.com"
+                 or str(c.get("domain", "")).lstrip(".") == "flow.google.com")
+            and (c["name"], c["value"], c.get("path", "/")) in parent_logins
+        )
+    ]
