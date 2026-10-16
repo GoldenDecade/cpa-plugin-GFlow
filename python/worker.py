@@ -293,7 +293,7 @@ class GFlowService:
         await self.initialize()
         tid = int(params.get("token_id", 0))
         res = await self.token_manager.refresh_credits(tid)
-        return {"success": True, "credits": getattr(res, "credits", 0) if res else 0}
+        return {"success": True, "credits": int(res or 0)}
 
     async def handle_get_config(self, _params: Dict[str, Any]) -> Dict[str, Any]:
         await self.initialize()
