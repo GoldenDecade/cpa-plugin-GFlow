@@ -15,6 +15,7 @@ from urllib.parse import quote, urljoin, urlparse
 import urllib.error
 import urllib.request
 from curl_cffi.requests import AsyncSession
+from .http_transport import request_with_tls_recovery
 from ..core.logger import debug_logger
 from ..core.config import config, get_yescaptcha_min_score
 from .flow_current import CurrentFlowClientMixin
@@ -547,65 +548,53 @@ class _FlowClientBase(FlowFrontendMixin):
         start_time = time.time()
 
         try:
-            async with AsyncSession(trust_env=False) as session:
-                if method.upper() == "GET":
-                    response = await session.get(
-                        url,
-                        headers=headers,
-                        proxy=proxy_url,
-                        timeout=request_timeout,
-                        impersonate=impersonate,
+            request_kwargs = {
+                "headers": headers, "proxy": proxy_url, "timeout": request_timeout,
+                "impersonate": impersonate,
+            }
+            if method.upper() != "GET":
+                request_kwargs["data" if raw_body is not None else "json"] = raw_body if raw_body is not None else json_data
+            response = await request_with_tls_recovery(
+                AsyncSession, method, url, **request_kwargs
+            )
+
+            duration_ms = (time.time() - start_time) * 1000
+
+            if config.debug_enabled:
+                debug_logger.log_response(
+                    status_code=response.status_code,
+                    headers=dict(response.headers),
+                    body=response.text,
+                    duration_ms=duration_ms,
+                )
+
+            if response.status_code >= 400:
+                error_reason = f"HTTP Error {response.status_code}"
+                try:
+                    error_body = response.json()
+                    if "error" in error_body:
+                        error_info = error_body["error"]
+                        error_message = error_info.get("message", "")
+                        details = error_info.get("details", [])
+                        for detail in details:
+                            if detail.get("reason"):
+                                error_reason = detail.get("reason")
+                                break
+                        if error_message:
+                            error_reason = f"{error_reason}: {error_message}"
+                except Exception:
+                    error_reason = (
+                        f"HTTP Error {response.status_code}: {response.text[:200]}"
                     )
-                else:
-                    request_kwargs = {
-                        "headers": headers,
-                        "proxy": proxy_url,
-                        "timeout": request_timeout,
-                        "impersonate": impersonate,
-                    }
-                    if raw_body is not None:
-                        request_kwargs["data"] = raw_body
-                    else:
-                        request_kwargs["json"] = json_data
-                    response = await session.post(url, **request_kwargs)
 
-                duration_ms = (time.time() - start_time) * 1000
+                debug_logger.log_error(f"[API FAILED] URL: {url}")
+                debug_logger.log_error(
+                    f"[API FAILED] Request Body: {request_body_for_log}"
+                )
+                debug_logger.log_error(f"[API FAILED] Response: {response.text}")
+                raise Exception(error_reason)
 
-                if config.debug_enabled:
-                    debug_logger.log_response(
-                        status_code=response.status_code,
-                        headers=dict(response.headers),
-                        body=response.text,
-                        duration_ms=duration_ms,
-                    )
-
-                if response.status_code >= 400:
-                    error_reason = f"HTTP Error {response.status_code}"
-                    try:
-                        error_body = response.json()
-                        if "error" in error_body:
-                            error_info = error_body["error"]
-                            error_message = error_info.get("message", "")
-                            details = error_info.get("details", [])
-                            for detail in details:
-                                if detail.get("reason"):
-                                    error_reason = detail.get("reason")
-                                    break
-                            if error_message:
-                                error_reason = f"{error_reason}: {error_message}"
-                    except Exception:
-                        error_reason = (
-                            f"HTTP Error {response.status_code}: {response.text[:200]}"
-                        )
-
-                    debug_logger.log_error(f"[API FAILED] URL: {url}")
-                    debug_logger.log_error(
-                        f"[API FAILED] Request Body: {request_body_for_log}"
-                    )
-                    debug_logger.log_error(f"[API FAILED] Response: {response.text}")
-                    raise Exception(error_reason)
-
-                return response.json()
+            return response.json()
 
         except Exception as e:
             error_msg = str(e)
@@ -804,73 +793,61 @@ class _FlowClientBase(FlowFrontendMixin):
         start_time = time.time()
 
         try:
-            async with AsyncSession(trust_env=False) as session:
-                if method.upper() == "GET":
-                    response = await session.get(
-                        url,
-                        headers=headers,
-                        proxy=proxy_url,
-                        timeout=request_timeout,
-                        impersonate=impersonate,
-                    )
-                else:
-                    request_kwargs = {
-                        "headers": headers,
-                        "proxy": proxy_url,
-                        "timeout": request_timeout,
-                        "impersonate": impersonate,
-                    }
-                    if raw_body is not None:
-                        request_kwargs["data"] = raw_body
-                    else:
-                        request_kwargs["json"] = json_data
-                    response = await session.post(url, **request_kwargs)
+            request_kwargs = {
+                "headers": headers, "proxy": proxy_url, "timeout": request_timeout,
+                "impersonate": impersonate,
+            }
+            if method.upper() != "GET":
+                request_kwargs["data" if raw_body is not None else "json"] = raw_body if raw_body is not None else json_data
+            response = await request_with_tls_recovery(
+                AsyncSession, method, url, **request_kwargs
+            )
 
-                duration_ms = (time.time() - start_time) * 1000
-                response_text = response.text
+            duration_ms = (time.time() - start_time) * 1000
+            response_text = response.text
 
-                if config.debug_enabled:
-                    debug_logger.log_response(
-                        status_code=response.status_code,
-                        headers={} if redact_sensitive_logs else dict(response.headers),
-                        body="<redacted>" if redact_sensitive_logs else response_text,
-                        duration_ms=duration_ms,
-                    )
+            if config.debug_enabled:
+                debug_logger.log_response(
+                    status_code=response.status_code,
+                    headers={} if redact_sensitive_logs else dict(response.headers),
+                    body="<redacted>" if redact_sensitive_logs else response_text,
+                    duration_ms=duration_ms,
+                )
 
-                if response.status_code >= 400 and return_error_response:
-                    return response_text
-
-                if response.status_code >= 400:
-                    error_reason = (
-                        f"HTTP Error {response.status_code}: {response_text[:500]}"
-                    )
-                    try:
-                        error_body = response.json()
-                        if "error" in error_body:
-                            error_info = error_body["error"]
-                            error_message = error_info.get("message", "")
-                            details = error_info.get("details", [])
-                            for detail in details:
-                                if detail.get("reason"):
-                                    error_reason = detail.get("reason")
-                                    break
-                            if error_message:
-                                error_reason = f"{error_reason}: {error_message}"
-                    except Exception:
-                        pass
-
-                    debug_logger.log_error(f"[API FAILED] URL: {url}")
-                    debug_logger.log_error(
-                        f"[API FAILED] Request Body: {request_body_for_log}"
-                    )
-                    debug_logger.log_error(
-                        "[API FAILED] Response: <redacted>"
-                        if redact_sensitive_logs
-                        else f"[API FAILED] Response: {response_text}"
-                    )
-                    raise Exception(error_reason)
-
+            if response.status_code >= 400 and return_error_response:
                 return response_text
+
+            if response.status_code >= 400:
+                error_reason = (
+                    f"HTTP Error {response.status_code}: {response_text[:500]}"
+                )
+                try:
+                    error_body = response.json()
+                    if "error" in error_body:
+                        error_info = error_body["error"]
+                        error_message = error_info.get("message", "")
+                        details = error_info.get("details", [])
+                        for detail in details:
+                            if detail.get("reason"):
+                                error_reason = detail.get("reason")
+                                break
+                        if error_message:
+                            error_reason = f"{error_reason}: {error_message}"
+                except Exception:
+                    pass
+
+                debug_logger.log_error(f"[API FAILED] URL: {url}")
+                debug_logger.log_error(
+                    f"[API FAILED] Request Body: {request_body_for_log}"
+                )
+                debug_logger.log_error(
+                    "[API FAILED] Response: <redacted>"
+                    if redact_sensitive_logs
+                    else f"[API FAILED] Response: {response_text}"
+                )
+                raise Exception(error_reason)
+
+            return response_text
 
         except Exception as e:
             error_msg = str(e)

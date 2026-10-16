@@ -601,7 +601,10 @@ fn handle_management_handle(req: &[u8]) -> Result<Vec<u8>, String> {
     let result = if path.ends_with("/api/models") {
         get_worker().execute("list_models", serde_json::json!({}))
     } else if path.ends_with("/api/status") {
-        get_worker().execute("status", serde_json::json!({}))
+        get_worker().execute("status", serde_json::json!({})).map(|mut value| {
+            value["plugin_version"] = serde_json::json!(env!("CARGO_PKG_VERSION"));
+            value
+        })
     } else if path.ends_with("/api/tokens") {
         match method {
             "GET" => get_worker().execute("list_tokens", serde_json::json!({})),

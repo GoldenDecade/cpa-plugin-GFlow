@@ -181,7 +181,7 @@ class GFlowService:
             "active_tokens": len(active),
             "total_credits": total_credits,
             "extension_sync": getattr(self, "last_extension_sync", None),
-            "sync_revision": "20261016.7",
+            "sync_revision": "20261016.8",
         }
 
     async def handle_list_tokens(self, _params: Dict[str, Any]) -> Dict[str, Any]:
