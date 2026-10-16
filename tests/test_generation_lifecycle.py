@@ -19,6 +19,7 @@ class Fake:
 
 class Tests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
+        (R/'data/tmp').mkdir(parents=True,exist_ok=True)
         self.tmp=tempfile.TemporaryDirectory(dir=R/'data/tmp')
         self.service=Fake(Path(self.tmp.name))
         self.manager=lifecycle.GenerationLifecycle(self.service)

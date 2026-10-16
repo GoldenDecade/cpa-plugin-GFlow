@@ -9261,9 +9261,9 @@ class BrowserCaptchaService:
     ) -> list[str]:
         """Build the candidate bootstrap URLs for the requested reCAPTCHA script."""
         normalized_path = script_path.lstrip("/")
-        # 默认优先 recaptcha.net；google.com 仅作为回退。
-        hosts = ["https://www.recaptcha.net", "https://www.google.com"]
-        suffix = f"?render={website_key}" if website_key else ""
+        # 跟随 Flow 页面允许的 Google 脚本站点，镜像仅作网络回退。
+        hosts = ["https://www.google.com", "https://www.recaptcha.net"]
+        suffix = f"?render={website_key}&trustedtypes=true" if website_key else "?trustedtypes=true"
         return [f"{host}/{normalized_path}{suffix}" for host in hosts]
 
     async def _resolve_personal_proxy_download_url(self) -> Optional[str]:

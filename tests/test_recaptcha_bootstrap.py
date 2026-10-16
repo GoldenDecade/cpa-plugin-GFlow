@@ -11,6 +11,17 @@ from types import SimpleNamespace
 
 ROOT=Path(__file__).resolve().parents[1]
 class ScriptRegression(unittest.TestCase):
+    def test_bootstrap_urls_enable_upstream_trusted_types(self):
+        source=ROOT/"python/flow2api/src/services/browser_captcha_personal.py"
+        tree=ast.parse(source.read_text(encoding="utf-8"))
+        cls=next(n for n in tree.body if isinstance(n,ast.ClassDef) and n.name=="BrowserCaptchaService")
+        method=next(n for n in cls.body if isinstance(n,ast.FunctionDef) and n.name=="_get_recaptcha_bootstrap_candidate_urls")
+        namespace={"Optional":__import__("typing").Optional}
+        exec(compile(ast.fix_missing_locations(ast.Module(body=[method],type_ignores=[])),str(source),"exec"),namespace)
+        urls=namespace["_get_recaptcha_bootstrap_candidate_urls"](None,"recaptcha/enterprise.js","synthetic-key")
+        self.assertTrue(urls[0].startswith("https://www.google.com/"))
+        self.assertTrue(all("trustedtypes=true" in url for url in urls))
+
     def test_script_url_uses_a_constrained_trusted_types_policy(self):
         source=ROOT/"python/flow2api/src/services/browser_captcha_personal.py"
         tree=ast.parse(source.read_text(encoding="utf-8"))
