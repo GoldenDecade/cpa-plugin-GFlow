@@ -49,7 +49,7 @@ class WorkerTests(unittest.IsolatedAsyncioTestCase):
         service.send_line = messages.append
         routes = ModuleType("src.api.routes")
         routes.ChatCompletionRequest = lambda **kw: SimpleNamespace(**kw)
-        routes._normalize_openai_request = AsyncMock(return_value=object())
+        routes._normalize_openai_request = AsyncMock(return_value=SimpleNamespace(model='gemini-3.1-flash-image-landscape', images=[]))
         routes._collect_non_stream_result = AsyncMock()
         routes._parse_handler_result = json.loads
         async def stream(*args):

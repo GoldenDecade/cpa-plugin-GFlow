@@ -20,7 +20,7 @@ class BrowserContextTest(unittest.IsolatedAsyncioTestCase):
         bootstrap=json.dumps({
             "bl":"boq_labs-ai-sandbox-frontend_upstream",
             "FdrFJe":"222", "SNlM0e":"fake-xsrf:upstream",
-        })
+        },separators=(",",":"))
         client._load_flow_frontend_bootstrap=AsyncMock(return_value=bootstrap)
         client._make_text_request=AsyncMock(return_value=json.dumps([["wrb.fr","nzlxg",json.dumps([12])]]))
         result=await client.get_credits(google_cookies="SID=fake; OSID=synthetic")
