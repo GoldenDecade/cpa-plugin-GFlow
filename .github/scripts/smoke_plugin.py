@@ -63,9 +63,9 @@ def probe(library, expected_version):
         status_data = json.loads(response)
         assert status_data["initialized"] is True and status_data["total_tokens"] == 0
         data_directory = library.parent / "gflow-data"
-        assert Path(status_data["database_path"]).resolve() == (data_directory / "flow.db").resolve()
+        assert Path(status_data["database_path"]).samefile(data_directory / "flow.db"), status_data["database_path"]
         runtime = Path(status_data["python"]).resolve()
-        assert data_directory.resolve() in runtime.parents and runtime.is_file()
+        assert runtime.is_file() and runtime.parents[2].samefile(data_directory), str(runtime)
         status, response = request("/v0/management/plugins/gflow/api/models")
         assert status == 200 and len(json.loads(response)["models"]) == 7
         status, response = request("/v0/management/plugins/gflow/api/media", query={"file": ["../flow.db"]})
