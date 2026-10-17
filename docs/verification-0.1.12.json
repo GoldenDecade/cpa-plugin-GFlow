@@ -28,8 +28,6 @@
   },
   "upstreamPinnedSources": "28 pinned files unchanged (27 source modules and 1 upstream test)",
   "unverified": [
-    "Actual EasyCPA host routing and API Key middleware",
-    "Self-contained frozen-worker installation smoke; CI extended to cover it",
     "Real Google Flow project creation",
     "Real Google image/video generation"
   ],
@@ -67,7 +65,33 @@
     "postRefreshPermissions": "identity, id, active, media flags and tier rechecked",
     "concurrency": "bound requests always run nonblocking account busy precheck; no additional reservation",
     "credits": "actual Google platform response remains authoritative; errors never switch accounts",
-    "cleanupPending": ".build restored test dependencies and generated followup fixtures await root final cleanup",
+    "cleanupPending": "Current .build cloud artifacts, restored dependencies and isolated CPA fixtures await root final cleanup",
     "structuredErrors": "Control validation/conflict/cancellation remain standard completion JSON errors; ABI unchanged"
+  },
+  "cloudBuild": {
+    "headSha": "e70f0c224422b92fa83d602d83b879779269bcf0",
+    "url": "https://github.com/daodeqing/cpa-plugin-GFlow/actions/runs/39053815126",
+    "conclusion": "success",
+    "platforms": [
+      "windows/amd64",
+      "linux/amd64",
+      "linux/arm64",
+      "darwin/amd64",
+      "darwin/arm64"
+    ],
+    "nativeBootstrapPassed": 9,
+    "windowsArtifact": "https://github.com/daodeqing/cpa-plugin-GFlow/actions/runs/39053815126/artifacts/12108995592",
+    "windowsArchiveSha256": "82f4bc609fc164d4207df913b8ecb35484ab3b78427e3c6d7a72ce9e74a17e6e",
+    "windowsDllSha256": "248eb2452b82d6154e5cd723c0f5076204e16fd8e6419d1025b2d3834eb85aec",
+    "windowsWorkerSha256": "d568e4b7f7e23cf675dbfd23e037f046b28af6bfc99d2bad4dcd364f864c6629"
+  },
+  "hostApi": {
+    "passed": 6,
+    "failed": 0,
+    "report": "docs/host-project-smoke-0.1.12.json",
+    "managementKeyRequired": false,
+    "googleAccounts": 0,
+    "cloudProjectsCreated": 0,
+    "mediaGenerated": 0
   }
 }
