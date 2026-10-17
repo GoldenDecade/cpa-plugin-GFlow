@@ -1,3 +1,4 @@
+from importlib.metadata import distribution
 from pathlib import Path
 import sys
 
@@ -13,7 +14,12 @@ datas = [
 binaries = []
 hiddenimports = [path.stem for path in (root / "python").glob("*.py") if path.name != "worker.py"]
 hiddenimports += collect_submodules("src", filter=lambda name: name != "src.main")
-for package in ("curl_cffi", "nodriver", "playwright", "aiosqlite", "bcrypt", "psutil"):
+hiddenimports += [
+    Path(entry).name.split(".", 1)[0]
+    for entry in distribution("tomli").files or []
+    if "__mypyc." in Path(entry).name
+]
+for package in ("curl_cffi", "nodriver", "playwright", "aiosqlite", "bcrypt", "psutil", "tomli"):
     package_data, package_binaries, package_imports = collect_all(package)
     datas += package_data
     binaries += package_binaries
