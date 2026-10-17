@@ -1,12 +1,10 @@
-"""管理连接回归：使用模拟接口验证页面状态，不导入账号、不访问 Google。"""
 import json
 from pathlib import Path
 import shutil
 import subprocess
 import unittest
 
-PAGE = Path(__file__).resolve().parents[1] / "static" / "manage.html"
-
+PAGE = Path(__file__).resolve().parents[1] / "static/manage.html"
 HARNESS = r"""
 const assert = require('node:assert/strict');
 const vm = require('node:vm');
@@ -17,127 +15,138 @@ function element() {
     replaceChildren(...nodes) { this.children = nodes; }, focus() {}, select() { this.selected = true; } };
 }
 const events = new Map(), requests = [];
-let mode = 'ok', hasSession = false, copiedConfig = '', clipboardDenied = false;
-const location = { origin: 'http://127.0.0.1:8317', hash: '#gflow_session=test-ticket', pathname: '/v0/resource/plugins/gflow/manage', search: '' };
+let mode = 'ok', copiedConfig = '', clipboardDenied = false;
+const location = { origin: 'http://127.0.0.1:8317', host: '127.0.0.1:8317', hash: '', pathname: '/v0/resource/plugins/gflow/manage', search: '' };
+const login = JSON.stringify({state:{managementKey:'test-management-secret',apiBase:location.origin}});
+let savedLogin = login;
+const storage = {
+  getItem(name) { assert.equal(name, 'cli-proxy-auth'); return savedLogin; },
+  setItem() { throw new Error('Plugin must not persist management credentials'); }
+};
 const context = vm.createContext({
   document: {
     getElementById(id) { if (!elements.has(id)) elements.set(id, element()); return elements.get(id); },
     createElement: element
   },
-  window: { location, history: { replaceState() { location.hash = ''; } },
-    addEventListener(name, fn) { events.set(name, fn); } },
-  navigator: { clipboard: { async writeText(value) { if (clipboardDenied) throw new Error('clipboard denied'); copiedConfig = value; } } },
-  console, AbortController, URLSearchParams, setTimeout, clearTimeout,
+  window: { location, localStorage: storage, addEventListener(name, fn) { events.set(name, fn); } },
+  navigator: { userAgent: 'synthetic-agent', clipboard: { async writeText(value) {
+    if (clipboardDenied) throw new Error('clipboard denied'); copiedConfig = value;
+  } } },
+  console, AbortController, URL, TextEncoder, TextDecoder, setTimeout, clearTimeout,
+  atob: value => Buffer.from(value, 'base64').toString('binary'),
   fetch: async (path, opts) => {
     requests.push({ path, opts });
-    if (path.endsWith('/bootstrap')) {
-      assert.equal(opts.headers.Authorization, undefined);
-      assert.equal(opts.credentials, 'same-origin');
-      const allowed = opts.headers['X-GFlow-Session'] === 'test-ticket' || hasSession;
-      if (!allowed || mode === 'missing-setup') return {
-        status: 401, ok: false, json: async () => ({error:{message:'请从 EasyCPA 插件菜单重新打开 GFlow'}})
-      };
-      hasSession = true;
-      return { status: 200, ok: true, json: async () => ({management_key:'test-management-secret'}) };
-    }
+    assert.ok(path.startsWith('/v0/management/plugins/gflow/api/'));
     assert.equal(opts.headers.Authorization, 'Bearer test-management-secret');
     let status = mode === 'wrong' ? 401 : 200;
     if (mode === 'config-failure' && path.endsWith('/config')) status = 500;
     const data = path.endsWith('/status')
-      ? { total_tokens: 0, active_tokens: 0, total_credits: 0, version: '3.13.9', python: 'D:/test/python.exe' }
+      ? { total_tokens: 0, active_tokens: 0, total_credits: 0, version: '3.12.0', python: '/plugin/gflow-data/runtime/gflow-worker' }
       : path.endsWith('/tokens') ? { tokens: [], total: 0 }
       : path.endsWith('/models') ? { models: [] }
       : status === 500 ? { error: { message: 'config temporarily unavailable' } } : {};
     return { status, ok: status === 200, json: async () => data };
   }
 });
-Object.defineProperty(context, 'localStorage', { get() { throw new Error('Must not access storage'); } });
 vm.runInContext(SCRIPT, context);
 const el = id => context.document.getElementById(id);
 (async () => {
   await events.get('DOMContentLoaded')();
-  assert.equal(el('stat-python-ver').textContent, 'Python 3.13.9');
-  assert.equal(el('stat-total-tokens').textContent, 0);
+  assert.equal(el('stat-python-ver').textContent, 'Python 3.12.0');
   assert.equal(el('save-settings-button').disabled, false);
-  assert.equal(location.hash, '');
-  assert.ok(requests.some(r => r.path.endsWith('/models')));
+  assert.equal(el('connection-setup').hidden, true);
   await context.copyExtensionConfig();
   const pairing = JSON.parse(copiedConfig);
-  assert.equal(pairing.product, 'GFlow');
   assert.equal(pairing.connectionToken, 'test-management-secret');
-  assert.equal(pairing.apiUrl, 'http://127.0.0.1:8317/v0/management/plugins/gflow/api/extension-sync');
-  assert.ok(requests.every(r => !r.path.includes('test-management-secret') && !r.path.includes('test-ticket')));
-  console.log('PASS startup automatically connects without a key input or secret in URL');
+  assert.equal(pairing.apiUrl, location.origin + '/v0/management/plugins/gflow/api/extension-sync');
+  assert.ok(requests.every(request => !request.path.includes('test-management-secret')));
+  console.log('PASS same-origin host login authenticates management calls without a public bootstrap');
+
   const beforeLink = requests.length;
   await context.copyExtensionLink(false);
-  assert.ok(copiedConfig === 'http://127.0.0.1:8317/v0/resource/plugins/gflow/extension.zip');
-  assert.equal(el('extension-public-url').value, copiedConfig);
-  assert.equal(el('extension-link-panel').hidden, false);
-  assert.match(el('extension-link-feedback').textContent, /已复制/);
-  await context.copyExtensionLink(true);
-  assert.ok(copiedConfig.endsWith('/tree/main/browser-extension'));
+  assert.equal(copiedConfig, location.origin + '/v0/resource/plugins/gflow/extension.zip');
   clipboardDenied = true;
   await context.copyExtensionLink(false);
   assert.equal(el('extension-public-url').selected, true);
-  assert.ok(el('extension-link-feedback').textContent.includes('Ctrl+C'));
-  assert.ok(!el('extension-public-url').value.includes('test-management-secret'));
   assert.equal(requests.length, beforeLink);
   clipboardDenied = false;
-  console.log('PASS embedded link controls copy public URLs with manual fallback');
+  console.log('PASS extension link remains a static public resource');
 
+  const mask = Buffer.from('cli-proxy-api-webui::secure-storage|' + location.host + '|synthetic-agent');
+  const encoded = Buffer.from(login);
+  for (let index = 0; index < encoded.length; index++) encoded[index] ^= mask[index % mask.length];
+  savedLogin = 'enc::v1::' + encoded.toString('base64');
   await context.initializeManagement();
-  assert.equal(el('stat-python-ver').textContent, 'Python 3.13.9');
-  console.log('PASS page refresh uses the authenticated browser session');
+  assert.equal(el('stat-python-ver').textContent, 'Python 3.12.0');
+  assert.ok(savedLogin.startsWith('enc::v1::'));
+  console.log('PASS host obfuscated login is read without rewriting storage');
+
   mode = 'wrong';
   await context.loadAll();
   assert.match(el('connection-status').textContent, /401/);
   assert.equal(el('save-settings-button').disabled, true);
-  assert.ok(!el('stat-python-ver').textContent.includes('离线'));
-  console.log('PASS invalid configured key is not misreported as Python offline');
-  mode = 'ok';
+  assert.equal(el('connection-setup').hidden, false);
+  console.log('PASS expired host credentials fail closed');
+
+  mode = 'ok'; savedLogin = login;
   await context.initializeManagement();
-  assert.equal(el('stat-python-ver').textContent, 'Python 3.13.9');
-  console.log('PASS automatic retry recovers from configuration correction');
+  assert.equal(el('save-settings-button').disabled, false);
+  console.log('PASS corrected host login reconnects');
+
   mode = 'config-failure';
   await context.loadAll();
-  assert.equal(el('save-settings-button').disabled, true);
-  let count = requests.length;
+  const beforeSave = requests.length;
   await context.saveSettings();
-  assert.equal(requests.length, count);
-  console.log('PASS failed config load blocks saving defaults');
-  mode = 'missing-setup'; hasSession = false;
-  count = requests.length;
+  assert.equal(requests.length, beforeSave);
+  console.log('PASS failed configuration loading cannot overwrite settings');
+
+  savedLogin = '';
+  const beforeMissing = requests.length;
   await context.initializeManagement();
-  assert.equal(requests.length, count + 1);
+  assert.equal(requests.length, beforeMissing);
   assert.equal(el('add-token-button').disabled, true);
-  assert.match(el('connection-status').textContent, /插件菜单/);
-  console.log('PASS missing bootstrap session does not call privileged management APIs');
+  assert.equal(el('connection-setup').hidden, false);
+  console.log('PASS missing login makes no privileged request');
+
+  savedLogin = JSON.stringify({state:{managementKey:'remote-secret',apiBase:'https://other.example'}});
+  await context.initializeManagement();
+  assert.equal(requests.length, beforeMissing);
+  console.log('PASS credentials belonging to a different origin are not forwarded');
+
+  savedLogin = ''; mode = 'ok';
+  el('connection-key').value = 'test-management-secret';
+  await context.connectManagement();
+  assert.equal(el('connection-key').value, '');
+  assert.equal(savedLogin, '');
+  assert.equal(el('save-settings-button').disabled, false);
+  console.log('PASS manual fallback keeps credentials only in memory');
+
+  await assert.rejects(context.apiRequest('https://other.example/api'));
   events.get('pagehide')();
-  count = requests.length;
+  const beforeClose = requests.length;
   await assert.rejects(context.apiRequest('/v0/management/plugins/gflow/api/status'));
-  assert.equal(requests.length, count);
-  console.log('PASS closing page clears in-memory management credentials');
+  assert.equal(requests.length, beforeClose);
+  console.log('PASS closing the page clears in-memory credentials');
 })().catch(error => { console.error(error); process.exitCode = 1; });
 """
+
 
 class ManagementUITest(unittest.TestCase):
     def test_management_connection(self):
         node = shutil.which("node")
-        self.assertIsNotNone(node, "需要 Node.js 执行页面逻辑回归")
+        self.assertIsNotNone(node, "Node.js is required for the management UI regression")
         html = PAGE.read_text(encoding="utf-8")
-        self.assertNotIn('id="mgmtKey"', html)
-        self.assertNotIn('id="connection-form"', html)
-        self.assertIn("如何获取 Cookie / Session Token", html)
-        self.assertIn("https://github.com/daodeqing/cpa-plugin-GFlow/tree/main/browser-extension", html)
-        self.assertNotIn("Flow2API", html)
+        self.assertNotIn("/v0/resource/plugins/gflow/bootstrap", html)
+        self.assertIn("cli-proxy-auth", html)
         script = html.split("<script>", 1)[1].split("</script>", 1)[0]
         result = subprocess.run(
-            [node, "-"], input="const SCRIPT = " + json.dumps(script) + chr(59) + chr(10) + HARNESS,
+            [node, "-"], input="const SCRIPT = " + json.dumps(script) + ";\n" + HARNESS,
             capture_output=True, text=True, encoding="utf-8", timeout=20,
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertEqual(result.stdout.count("PASS "), 8, result.stdout)
+        self.assertEqual(result.stdout.count("PASS "), 10, result.stdout)
         print(result.stdout, end="")
+
 
 if __name__ == "__main__":
     unittest.main()

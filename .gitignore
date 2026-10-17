@@ -1,4 +1,5 @@
 target/
+.build/
 dist/
 *.zip
 *.sha256

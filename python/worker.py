@@ -9,7 +9,6 @@ import asyncio
 import base64
 import json
 import os
-import secrets
 import sys
 import traceback
 
@@ -153,9 +152,6 @@ class GFlowService:
         out = json.dumps(data, ensure_ascii=False)
         _rpc_stdout.write(out + "\n")
         _rpc_stdout.flush()
-
-    async def handle_ui_nonce(self, _params: Dict[str, Any]) -> Dict[str, Any]:
-        return {"nonce": secrets.token_urlsafe(32)}
 
     async def handle_ping(self, _params: Dict[str, Any]) -> Dict[str, Any]:
         return {"pong": True}
@@ -401,7 +397,7 @@ class GFlowService:
             return
 
         is_stream = bool(params.get("stream", False))
-        base_url_override = params.get("base_url_override", "/v0/resource/plugins/gflow")
+        base_url_override = "/v0/management/plugins/gflow/api"
 
         try:
             req_obj = ChatCompletionRequest(**params_clean)

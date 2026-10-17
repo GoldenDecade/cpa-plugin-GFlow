@@ -1,28 +1,55 @@
-"""图片回传契约，不连接真实生成服务。"""
 import base64
 import importlib.util
 from pathlib import Path
 import tempfile
 import unittest
-ROOT=Path(__file__).resolve().parents[1]
-spec=importlib.util.spec_from_file_location("media_response_under_test",ROOT/"python/media_response.py")
-module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+from unittest.mock import patch
+
+ROOT = Path(__file__).resolve().parents[1]
+spec = importlib.util.spec_from_file_location("media_response_under_test", ROOT / "python/media_response.py")
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+
 
 class MediaResponseRegression(unittest.TestCase):
-    def test_cached_image_is_delivered_inline_in_json_and_sse(self):
-        root=ROOT/"data/tmp";root.mkdir(parents=True,exist_ok=True)
-        with tempfile.TemporaryDirectory(dir=root) as tmp:
-            name="a"*32+".jpg";body=b"synthetic-jpeg"
-            Path(tmp,name).write_bytes(body)
-            url="/v0/resource/plugins/gflow/tmp/"+name
-            video="/v0/resource/plugins/gflow/tmp/"+"b"*32+".mp4"
-            self.assertEqual(module.inline_cached_images(video,tmp),video.replace("/tmp/","/tmp?file="))
-            result=module.inline_cached_images({"url":url,"choices":[{"message":{"content":"![image]("+url+")"}}]},tmp)
-            expected="data:image/jpeg;base64,"+base64.b64encode(body).decode()
-            self.assertEqual(result["url"],expected)
-            self.assertIn(expected,result["choices"][0]["message"]["content"])
-            self.assertIn(expected,module.inline_cached_images('data: {"url":"'+url+'"}',tmp))
-            self.assertEqual(module.inline_cached_images("/v0/resource/plugins/gflow/tmp/control-fake.json",tmp),"/v0/resource/plugins/gflow/tmp/control-fake.json")
-            self.assertEqual(module.inline_cached_images("/v0/resource/plugins/gflow/tmp/../../secret.jpg",tmp),"/v0/resource/plugins/gflow/tmp/../../secret.jpg")
+    def setUp(self):
+        staging = ROOT / ".build/media-tests"
+        staging.mkdir(parents=True, exist_ok=True)
+        self.temporary = tempfile.TemporaryDirectory(dir=staging)
+        self.addCleanup(self.temporary.cleanup)
+        self.root = Path(self.temporary.name)
 
-if __name__=="__main__":unittest.main()
+    def test_cached_images_and_video_are_delivered_without_management_credentials(self):
+        for extension, mime in [("jpg", "image/jpeg"), ("mp4", "video/mp4")]:
+            filename = "a" * 32 + "." + extension
+            body = b"synthetic-media"
+            (self.root / filename).write_bytes(body)
+            expected = "data:" + mime + ";base64," + base64.b64encode(body).decode()
+            for prefix in ["/v0/resource/plugins/gflow", "/v0/management/plugins/gflow/api"]:
+                url = prefix + "/tmp/" + filename
+                result = module.inline_cached_images({"url": url, "choices": [{"message": {"content": "![media](" + url + ")"}}]}, self.root)
+                self.assertEqual(result["url"], expected)
+                self.assertIn(expected, result["choices"][0]["message"]["content"])
+                self.assertIn(expected, module.inline_cached_images('data: {"url":"' + url + '"}', self.root))
+
+    def test_control_files_traversal_and_external_urls_are_not_read(self):
+        for url in [
+            "/v0/resource/plugins/gflow/tmp/control-fake.json",
+            "/v0/resource/plugins/gflow/tmp/../../secret.jpg",
+            "https://other.example/v0/management/plugins/gflow/api/tmp/" + "a" * 32 + ".mp4",
+        ]:
+            self.assertEqual(module.inline_cached_images(url, self.root), url)
+
+    def test_missing_cached_media_is_not_reported_as_a_usable_url(self):
+        with self.assertRaisesRegex(ValueError, "missing"):
+            module.inline_cached_images("/v0/management/plugins/gflow/api/tmp/" + "a" * 32 + ".mp4", self.root)
+
+    def test_oversize_media_reports_authenticated_retrieval_without_resubmission(self):
+        filename = "a" * 32 + ".mp4"
+        (self.root / filename).write_bytes(b"large")
+        with patch.object(module, "MAX_INLINE_BYTES", 1), self.assertRaisesRegex(ValueError, "authenticated"):
+            module.inline_cached_images("/v0/management/plugins/gflow/api/tmp/" + filename, self.root)
+
+
+if __name__ == "__main__":
+    unittest.main()

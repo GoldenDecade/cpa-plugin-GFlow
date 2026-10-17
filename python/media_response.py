@@ -1,32 +1,42 @@
-"""返回已缓存的图片内容，兼容只注册精确资源路径的宿主内核。"""
 import base64
 from pathlib import Path
 import re
 
-CACHE_IMAGE = re.compile(r"/v0/resource/plugins/gflow/tmp/([a-f0-9]{32}\.(?:png|jpg|jpeg|webp))")
+
+CACHE_MEDIA = re.compile(
+    r"(?<![A-Za-z0-9/.:])/v0/(?:resource|management)/plugins/gflow(?:/api)?/tmp/"
+    r"([a-f0-9]{32}\.(?:png|jpg|jpeg|webp|mp4|webm|mov))(?=$|[\s\"'<>\)\\])"
+)
+MEDIA_TYPES = {
+    ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+    ".webp": "image/webp", ".mp4": "video/mp4", ".webm": "video/webm",
+    ".mov": "video/quicktime",
+}
+MAX_INLINE_BYTES = 128 * 1024 * 1024
+
 
 def inline_cached_images(value, cache_dir):
-    """只替换本插件图片缓存；不读取任意文件或短期控制令牌。"""
+    root = Path(cache_dir).resolve()
     memo = {}
+
     def replace(match):
         filename = match.group(1)
         if filename not in memo:
-            path = Path(cache_dir) / filename
-            if not path.is_file() or path.stat().st_size > 24 * 1024 * 1024:
-                return match.group(0)
-            mime = {".png":"image/png",".jpg":"image/jpeg",".jpeg":"image/jpeg",".webp":"image/webp"}[path.suffix]
-            memo[filename] = "data:" + mime + ";base64," + base64.b64encode(path.read_bytes()).decode("ascii")
+            path = root / filename
+            if path.is_symlink() or path.resolve().parent != root or not path.is_file():
+                raise ValueError("Generated media is missing from the GFlow cache; generation was not retried")
+            if path.stat().st_size > MAX_INLINE_BYTES:
+                raise ValueError("Generated media exceeds the 128 MiB inline limit; retrieve the cached file through the authenticated GFlow media management API")
+            memo[filename] = "data:" + MEDIA_TYPES[path.suffix] + ";base64," + base64.b64encode(path.read_bytes()).decode("ascii")
         return memo[filename]
+
     def walk(item):
-        if isinstance(item, str): return CACHE_IMAGE.sub(replace, item)
-        if isinstance(item, dict): return {key:walk(child) for key,child in item.items()}
-        if isinstance(item, list): return [walk(child) for child in item]
+        if isinstance(item, str):
+            return CACHE_MEDIA.sub(replace, item)
+        if isinstance(item, dict):
+            return {key: walk(child) for key, child in item.items()}
+        if isinstance(item, list):
+            return [walk(child) for child in item]
         return item
-    value = walk(value)
-    media = re.compile(r"/v0/resource/plugins/gflow/tmp/([a-f0-9]{32}\.(?:png|jpg|jpeg|webp|mp4|webm|mov))")
-    def route(item):
-        if isinstance(item,str): return media.sub(lambda m:"/v0/resource/plugins/gflow/tmp?file="+m.group(1),item)
-        if isinstance(item,dict): return {key:route(child) for key,child in item.items()}
-        if isinstance(item,list): return [route(child) for child in item]
-        return item
-    return route(value)
+
+    return walk(value)

@@ -1,143 +1,120 @@
-"""验证页面握手的权限边界，仅使用虚构密钥，不连接 Google。"""
 import base64
-import ctypes as c
-import json
+import ctypes
 import io
+import json
+import os
 from pathlib import Path
+import sys
+import time
 import unittest
 import zipfile
-import psutil
 
 ROOT = Path(__file__).resolve().parents[1]
-DLL = ROOT / "target" / "release" / "gflow.dll"
-if not DLL.exists():
-    DLL = Path("D:/LUO/proxyAPI/EasyCLIProxyAPI-v0.2.96-Windows-amd64/cpa-core/plugins/windows/amd64/gflow-v0.1.0.dll")
+sys.path.insert(0, str(ROOT / ".github/scripts"))
+from smoke_plugin import Buffer, Plugin
+
+DEFAULT_LIBRARY = ROOT / "target/release" / ("gflow.dll" if os.name == "nt" else "libgflow.dylib" if sys.platform == "darwin" else "libgflow.so")
+LIBRARY = Path(os.environ.get("GFLOW_NATIVE_LIBRARY", str(DEFAULT_LIBRARY)))
 
 
-class Buffer(c.Structure):
-    _fields_ = [("ptr", c.c_void_p), ("len", c.c_size_t)]
-
-
-Call = c.CFUNCTYPE(c.c_int, c.c_char_p, c.c_void_p, c.c_size_t, c.POINTER(Buffer))
-Free = c.CFUNCTYPE(None, c.c_void_p, c.c_size_t)
-Shutdown = c.CFUNCTYPE(None)
-
-
-class Plugin(c.Structure):
-    _fields_ = [("abi_version", c.c_uint32), ("call", Call), ("free_buffer", Free), ("shutdown", Shutdown)]
-
-
-@unittest.skipUnless(DLL.is_file(), "Native ABI smoke requires an available built Windows DLL")
+@unittest.skipUnless(LIBRARY.is_file(), "Requires the library built by the native CI job")
 class BootstrapTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.library = c.CDLL(str(DLL))
+        cls.data_dir = ROOT / ".build" / ("native-boundary-" + str(time.time_ns()))
+        cls.library = ctypes.CDLL(str(LIBRARY.resolve()))
         cls.api = Plugin()
         init = cls.library.cliproxy_plugin_init
-        init.argtypes = [c.c_void_p, c.POINTER(Plugin)]
-        init.restype = c.c_int
-        if init(None, c.byref(cls.api)):
+        init.argtypes = [ctypes.c_void_p, ctypes.POINTER(Plugin)]
+        init.restype = ctypes.c_int
+        if init(None, ctypes.byref(cls.api)):
             raise RuntimeError("Plugin init failed")
-        cls.rpc("plugin.register", {"config_yaml": base64.b64encode(("enabled: true" + chr(10) + "management_key: synthetic-management-key" + chr(10)).encode()).decode()})
-        result = cls.rpc("management.register", {})["result"]
-        cls.menu = next(r["Path"] for r in result["Resources"] if r.get("Menu") == "GFlow")
-        cls.nonce = cls.menu.split("#gflow_session=", 1)[1]
+        config = "data_dir: " + json.dumps(str(cls.data_dir)) + "\nmanagement_key: synthetic-management-key\n"
+        cls.metadata = cls.rpc("plugin.register", {"config_yaml": base64.b64encode(config.encode()).decode()})["result"]
+        cls.registration = cls.rpc("management.register", {})["result"]
+        assert not cls.data_dir.exists(), "Static registration must not start or deploy a worker"
 
     @classmethod
     def tearDownClass(cls):
-        descendants = psutil.Process().children(recursive=True)
         cls.api.shutdown()
-        _, alive = psutil.wait_procs(descendants, timeout=3)
-        for process in alive:
-            try:
-                process.terminate()
-            except psutil.NoSuchProcess:
-                pass
-        psutil.wait_procs(alive, timeout=3)
 
     @classmethod
     def rpc(cls, method, payload):
         raw = json.dumps(payload).encode()
-        data = c.create_string_buffer(raw)
-        output = Buffer()
-        rc = cls.api.call(method.encode(), c.cast(data, c.c_void_p), len(raw), c.byref(output))
+        request = ctypes.create_string_buffer(raw)
+        response = Buffer()
+        status = cls.api.call(method.encode(), request, len(raw), ctypes.byref(response))
         try:
-            result = json.loads(c.string_at(output.ptr, output.len))
+            result = json.loads(ctypes.string_at(response.ptr, response.len))
         finally:
-            cls.api.free_buffer(output.ptr, output.len)
-        if rc:
-            raise RuntimeError(result.get("error", {}).get("message", "plugin call failed"))
+            cls.api.free_buffer(response.ptr, response.len)
+        if status:
+            raise RuntimeError(result.get("error", {}).get("message", "Plugin call failed"))
         return result
 
-    def resource(self, path, headers=None):
-        result = self.rpc("management.handle", {
-            "Method": "GET", "Path": "/v0/resource/plugins/gflow/" + path,
-            "Headers": {k: [v] for k, v in (headers or {}).items()}
-        })["result"]
+    def request(self, path, method="GET", query=None, body=None):
+        request = {"Method": method, "Path": path, "Query": query or {}}
+        if body is not None:
+            request["Body"] = base64.b64encode(json.dumps(body).encode()).decode()
+        result = self.rpc("management.handle", request)["result"]
         result["decoded"] = base64.b64decode(result["Body"])
         return result
 
     def test_public_html_contains_no_credentials(self):
-        result = self.resource("manage")
+        result = self.request("/v0/resource/plugins/gflow/manage")
         self.assertEqual(result["StatusCode"], 200)
         self.assertNotIn(b"synthetic-management-key", result["decoded"])
-        self.assertNotIn(self.nonce.encode(), result["decoded"])
-        self.assertNotIn(b'id="mgmtKey"', result["decoded"])
+        self.assertIn(b"cli-proxy-auth", result["decoded"])
+        self.assertNotIn(b"/gflow/bootstrap", result["decoded"])
 
-    def test_menu_contains_ticket_not_management_key(self):
-        self.assertGreaterEqual(len(self.nonce), 40)
-        self.assertNotIn("synthetic-management-key", self.menu)
+    def test_resources_are_static_and_menu_has_no_ticket(self):
+        resources = self.registration["Resources"]
+        self.assertEqual({item["Path"] for item in resources}, {"/manage", "/extension.zip"})
+        menu = next(item["Path"] for item in resources if item.get("Menu") == "GFlow")
+        self.assertEqual(menu, "/manage")
+        fields = self.metadata["metadata"]["ConfigFields"]
+        self.assertEqual({item["Name"] for item in fields}, {"data_dir"})
 
-    def test_extension_download_contains_independent_gflow_manifest(self):
-        result = self.resource("extension.zip")
+    def test_public_dynamic_routes_are_unconditionally_removed(self):
+        for suffix in ("bootstrap", "tmp", "tmp/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.jpg", "api/status", "manage/../api/status"):
+            result = self.request("/v0/resource/plugins/gflow/" + suffix)
+            self.assertEqual(result["StatusCode"], 404)
+            self.assertNotIn(b"synthetic-management-key", result["decoded"])
+
+    def test_public_resources_reject_mutating_methods(self):
+        for suffix in ("manage", "extension.zip"):
+            self.assertEqual(self.request("/v0/resource/plugins/gflow/" + suffix, "POST")["StatusCode"], 404)
+
+    def test_extension_download_is_only_a_static_archive(self):
+        result = self.request("/v0/resource/plugins/gflow/extension.zip")
         self.assertEqual(result["StatusCode"], 200)
         with zipfile.ZipFile(io.BytesIO(result["decoded"])) as archive:
-            manifest = json.loads(archive.read("manifest.json"))
-            self.assertEqual(manifest["name"], "GFlow 登录助手")
+            self.assertEqual(json.loads(archive.read("manifest.json"))["name"], "GFlow 登录助手")
             self.assertIn("background.js", archive.namelist())
-            self.assertNotIn(b"synthetic-management-key", archive.read("popup.js"))
 
-    def test_sync_validation_keeps_http_status_and_safe_error(self):
-        result = self.rpc("management.handle", {
-            "Method": "POST", "Path": "/v0/management/plugins/gflow/api/extension-sync",
-            "Body": base64.b64encode(json.dumps({"login_account": "invalid"}).encode()).decode(),
-        })["result"]
+    def test_media_requires_management_route_and_stays_private(self):
+        cache = self.data_dir / "tmp"
+        cache.mkdir(parents=True, exist_ok=True)
+        filename = "a" * 32 + ".mp4"
+        (cache / filename).write_bytes(b"synthetic-video")
+        result = self.request("/v0/management/plugins/gflow/api/media", query={"file": [filename]})
+        self.assertEqual(result["StatusCode"], 200)
+        self.assertEqual(result["decoded"], b"synthetic-video")
+        self.assertIn("no-store", result["Headers"]["cache-control"][0])
+        for invalid in ("../flow.db", "control-secret.json", "../" + filename):
+            self.assertEqual(self.request("/v0/management/plugins/gflow/api/media", query={"file": [invalid]})["StatusCode"], 404)
+
+    def test_management_method_is_checked_before_starting_backend(self):
+        self.assertEqual(self.request("/v0/management/plugins/gflow/api/status", "POST")["StatusCode"], 405)
+        self.assertEqual(self.request("/v0/management/plugins/gflow/api/config/delete")["StatusCode"], 404)
+
+    def test_sync_validation_preserves_http_failure(self):
+        result = self.request("/v0/management/plugins/gflow/api/extension-sync", "POST", body={"login_account": "invalid"})
         self.assertEqual(result["StatusCode"], 400)
-        body = json.loads(base64.b64decode(result["Body"]))
+        body = json.loads(result["decoded"])
         self.assertFalse(body["success"])
         self.assertEqual(body["error"]["code"], "gflow_invalid_email")
         self.assertNotIn("traceback", str(body))
-        self.assertNotIn("status_code", body)
-
-    def test_missing_and_invalid_ticket_are_rejected(self):
-        for headers in [{}, {"X-GFlow-Session": "incorrect"}]:
-            result = self.resource("bootstrap", headers)
-            self.assertEqual(result["StatusCode"], 401)
-            self.assertNotIn(b"synthetic-management-key", result["decoded"])
-
-    def test_valid_ticket_returns_private_session(self):
-        result = self.resource("bootstrap", {"X-GFlow-Session": self.nonce, "Sec-Fetch-Site": "same-origin"})
-        self.assertEqual(result["StatusCode"], 200)
-        self.assertEqual(json.loads(result["decoded"])["management_key"], "synthetic-management-key")
-        self.assertIn("no-store", result["Headers"]["cache-control"][0])
-        cookie = result["Headers"]["set-cookie"][0]
-        self.assertIn("HttpOnly", cookie)
-        self.assertIn("SameSite=Strict", cookie)
-
-    def test_cross_site_request_rejected_even_with_valid_ticket(self):
-        result = self.resource("bootstrap", {"X-GFlow-Session": self.nonce, "Sec-Fetch-Site": "cross-site"})
-        self.assertEqual(result["StatusCode"], 403)
-
-    def test_cookie_refresh_and_missing_config(self):
-        result = self.resource("bootstrap", {"Cookie": "gflow_ui_session=" + self.nonce})
-        self.assertEqual(result["StatusCode"], 200)
-        self.rpc("plugin.reconfigure", {"config_yaml": "enabled: true"})
-        try:
-            result = self.resource("bootstrap", {"X-GFlow-Session": self.nonce})
-            self.assertEqual(result["StatusCode"], 503)
-            self.assertIn("插件", json.loads(result["decoded"])["error"]["message"])
-        finally:
-            self.rpc("plugin.reconfigure", {"config_yaml": "management_key: synthetic-management-key"})
 
 
 if __name__ == "__main__":

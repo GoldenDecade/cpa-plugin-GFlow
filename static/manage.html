@@ -504,11 +504,16 @@
   </div>
 
   <div id="toast" class="toast" style="display:none;"></div>
+  <details id="connection-setup" hidden style="margin:24px;">
+    <summary>手动连接管理中心</summary>
+    <p>优先在同一浏览器登录管理中心并记住登录。无法读取该登录时，可临时输入管理密钥；仅保存在当前页面内存中。</p>
+    <input id="connection-key" type="password" autocomplete="off" placeholder="管理中心密钥" class="form-input" />
+    <button class="btn btn-primary" onclick="connectManagement()">连接</button>
+  </details>
 
   <script>
     let allModels = [];
 
-    // 管理凭据由安装配置通过受校验的握手提供，不显示输入框、不写入浏览器存储。
     let managementKey = '';
     let configLoaded = false;
 
@@ -542,7 +547,7 @@
         document.getElementById(id).textContent = '-';
       }
       document.getElementById('stat-python-ver').textContent = '连接中 / 待检测';
-      document.getElementById('stat-python-path').textContent = '等待安装配置中的管理凭据验证。';
+      document.getElementById('stat-python-path').textContent = '等待管理中心登录验证。';
       tableMessage('tokens-tbody', 7, '等待自动连接', message);
       allModels = [];
       tableMessage('models-tbody', 3, '等待自动连接', message);
@@ -550,39 +555,58 @@
       connectionMessage(message, isError);
     }
 
+    function decodeHostLogin(raw) {
+      if (!raw) return null;
+      if (raw.startsWith('enc::v1::')) {
+        const bytes = Uint8Array.from(atob(raw.slice(9)), character => character.charCodeAt(0));
+        const mask = new TextEncoder().encode('cli-proxy-api-webui::secure-storage|' + window.location.host + '|' + navigator.userAgent);
+        raw = new TextDecoder().decode(bytes.map((value, index) => value ^ mask[index % mask.length]));
+      }
+      const saved = JSON.parse(raw);
+      const state = saved.state || saved;
+      if (state.apiBase && new URL(state.apiBase, window.location.origin).origin !== window.location.origin) return null;
+      const key = state.managementKey;
+      return typeof key === 'string' && key.trim() && key.length <= 512 && !/[\x00-\x1f\x7f]/.test(key) ? key.trim() : null;
+    }
+
+    function savedManagementKey() {
+      for (const owner of [window, window.parent]) {
+        try {
+          if (!owner || owner.location.origin !== window.location.origin) continue;
+          const key = decodeHostLogin(owner.localStorage.getItem('cli-proxy-auth'));
+          if (key) return key;
+        } catch (_) {}
+      }
+      return '';
+    }
+
+    async function connectManagement() {
+      const field = document.getElementById('connection-key');
+      const key = field.value.trim();
+      field.value = '';
+      resetConnection();
+      if (!key || key.length > 512 || /[\x00-\x1f\x7f]/.test(key)) {
+        connectionMessage('请输入有效的管理中心密钥。', true);
+        return;
+      }
+      managementKey = key;
+      await loadAll();
+    }
+
     async function initializeManagement() {
       resetConnection();
-      const button = document.getElementById('refresh-button');
-      button.disabled = true;
-      const headers = {};
-      const ticket = new URLSearchParams(window.location.hash.slice(1)).get('gflow_session');
-      if (ticket) {
-        headers['X-GFlow-Session'] = ticket;
-        // 票据不留在当前页面地址中，也不发送给外部网站。
-        window.history.replaceState(null, '', window.location.pathname + window.location.search);
+      managementKey = savedManagementKey();
+      document.getElementById('connection-setup').hidden = Boolean(managementKey);
+      if (!managementKey) {
+        connectionMessage('请先在同一浏览器登录管理中心并记住登录，或展开“手动连接管理中心”。', true);
+        return;
       }
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 15000);
-      try {
-        const response = await fetch('/v0/resource/plugins/gflow/bootstrap', {
-          headers, credentials: 'same-origin', cache: 'no-store', signal: controller.signal
-        });
-        const result = await response.json();
-        if (!response.ok) throw new Error(result.error?.message || '自动连接失败，请从 EasyCPA 插件菜单重新打开 GFlow。');
-        if (typeof result.management_key !== 'string' || !result.management_key) throw new Error('插件尚未配置管理凭据。');
-        managementKey = result.management_key;
-        await loadAll();
-      } catch (error) {
-        resetConnection(error.name === 'AbortError' ? '自动连接超时，请点击“刷新状态”重试。' : error.message, true);
-      } finally {
-        clearTimeout(timer);
-        button.disabled = false;
-      }
+      await loadAll();
     }
 
     async function apiRequest(path, method = 'GET', body = null) {
       if (!managementKey) {
-        const error = new Error('插件连接尚未就绪，请点击“刷新状态”，或在插件配置中检查 management_key。');
+        const error = new Error('插件尚未连接，请先登录管理中心或使用手动连接。');
         error.status = 401;
         throw error;
       }
@@ -603,8 +627,9 @@
       }
       if (requestKey !== managementKey) throw new Error('连接已变更，请重新加载。');
       if (resp.status === 401 || resp.status === 403) {
-        const message = '管理鉴权失败（HTTP ' + resp.status + '）：请在“插件 → GFlow → 配置”中更新 management_key，再重新打开。不是 Python 离线。';
+        const message = '管理鉴权失败（HTTP ' + resp.status + '）：请重新登录管理中心或更新临时输入的管理密钥。';
         resetConnection(message, true);
+        document.getElementById('connection-setup').hidden = false;
         const error = new Error(message);
         error.status = resp.status;
         throw error;
@@ -698,9 +723,9 @@
 
           html += `<tr>
             <td><strong>#${t.id}</strong></td>
-            <td>${t.email} <small style="color:var(--text-dim);">(${t.remark || '无备注'})</small></td>
+            <td>${escapeAccountHealth(t.email)} <small style="color:var(--text-dim);">(${escapeAccountHealth(t.remark || '无备注')})</small></td>
             <td><strong style="color:var(--primary); font-size:14px;">${t.credits ?? 0}</strong><small style="display:block;color:var(--text-dim);">缓存记录</small></td>
-            <td>${t.current_project_name || t.current_project_id || '-'}</td>
+            <td>${escapeAccountHealth(t.current_project_name || t.current_project_id || '-')}</td>
             <td>
               <span class="badge ${t.image_enabled ? 'badge-success' : 'badge-warning'}">图: ${t.image_enabled ? '开' : '关'}</span>
               <span class="badge ${t.video_enabled ? 'badge-success' : 'badge-warning'}">视: ${t.video_enabled ? '开' : '关'}</span>

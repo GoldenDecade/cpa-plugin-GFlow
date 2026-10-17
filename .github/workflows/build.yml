@@ -8,27 +8,29 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
+
+concurrency:
+  group: gflow-build-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
-  PLUGIN_ID: gflow
+  PYTHONDONTWRITEBYTECODE: '1'
 
 jobs:
   build:
     name: Build ${{ matrix.goos }}/${{ matrix.goarch }}
     runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
         include:
-          - { goos: linux, goarch: amd64, runner: ubuntu-24.04, ext: so, target: x86_64-unknown-linux-gnu }
-          - { goos: linux, goarch: arm64, runner: ubuntu-24.04-arm, ext: so, target: aarch64-unknown-linux-gnu }
-          - { goos: darwin, goarch: amd64, runner: macos-15-intel, ext: dylib, target: x86_64-apple-darwin }
-          - { goos: darwin, goarch: arm64, runner: macos-14, ext: dylib, target: aarch64-apple-darwin }
-          - { goos: windows, goarch: amd64, runner: windows-2022, ext: dll, target: x86_64-pc-windows-msvc }
-    defaults:
-      run:
-        shell: bash
+          - { goos: linux, goarch: amd64, runner: ubuntu-24.04, target: x86_64-unknown-linux-gnu }
+          - { goos: linux, goarch: arm64, runner: ubuntu-24.04-arm, target: aarch64-unknown-linux-gnu }
+          - { goos: darwin, goarch: amd64, runner: macos-15-intel, target: x86_64-apple-darwin }
+          - { goos: darwin, goarch: arm64, runner: macos-14, target: aarch64-apple-darwin }
+          - { goos: windows, goarch: amd64, runner: windows-2022, target: x86_64-pc-windows-msvc }
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -37,58 +39,31 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
-      - name: Test upstream integration and task lifecycle
-        run: |
-          python -m pip install "psutil>=5.9,<8" "pillow>=10,<13" "send2trash>=1.8,<3"
-          python -m pip install -r python/flow2api/requirements.txt
-          python -B -m unittest discover -s tests -p 'test_*.py' -v
-          PYTHONPATH=python/flow2api python -B -m unittest discover -s tests/upstream -p 'test_*.py' -v
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
-      - name: Resolve release metadata
-        run: |
-          set -euo pipefail
-          if [[ "${GITHUB_REF_TYPE:-}" == "tag" && "${GITHUB_REF_NAME}" == v* ]]; then
-            VERSION="${GITHUB_REF_NAME#v}"
-          else
-            VERSION=$(python -c "import tomllib; print(tomllib.load(open('Cargo.toml','rb'))['package']['version'])")
-          fi
-          echo "VERSION=${VERSION}" >> "${GITHUB_ENV}"
-          echo "LIB_NAME=${PLUGIN_ID}.${{ matrix.ext }}" >> "${GITHUB_ENV}"
-          echo "ARCHIVE_NAME=${PLUGIN_ID}_${VERSION}_${{ matrix.goos }}_${{ matrix.goarch }}.zip" >> "${GITHUB_ENV}"
-      - name: Test native media routing
-        run: cargo test --locked
-      - name: Build Rust cdylib
-        run: |
-          set -euo pipefail
-          cargo build --release --target ${{ matrix.target }}
-          mkdir -p dist
-          if [ -f "target/${{ matrix.target }}/release/${LIB_NAME}" ]; then
-            cp "target/${{ matrix.target }}/release/${LIB_NAME}" "dist/${LIB_NAME}"
-          elif [ -f "target/${{ matrix.target }}/release/lib${LIB_NAME}" ]; then
-            cp "target/${{ matrix.target }}/release/lib${LIB_NAME}" "dist/${LIB_NAME}"
-          elif [ -f "target/release/${LIB_NAME}" ]; then
-            cp "target/release/${LIB_NAME}" "dist/${LIB_NAME}"
-          elif [ -f "target/release/lib${LIB_NAME}" ]; then
-            cp "target/release/lib${LIB_NAME}" "dist/${LIB_NAME}"
-          else
-            echo "Error: Could not find built library" >&2
-            exit 1
-          fi
-      - name: Package plugin
-        run: |
-          python .github/scripts/package.py \
-            --library "dist/${LIB_NAME}" \
-            --archive "dist/${ARCHIVE_NAME}" \
-            --checksum "dist/${ARCHIVE_NAME}.sha256"
+      - name: Install build and test dependencies
+        run: python -B -m pip install -r python/flow2api/requirements.txt "pyinstaller==6.16.0" "pillow>=10,<13" "send2trash>=1.8,<3"
+      - name: Test, freeze Python, embed worker and verify clean plugin installation
+        run: python -B .github/scripts/build.py --goos ${{ matrix.goos }} --goarch ${{ matrix.goarch }} --target ${{ matrix.target }}
       - uses: actions/upload-artifact@v4
         with:
           name: dist-${{ matrix.goos }}-${{ matrix.goarch }}
           path: |
-            dist/${{ env.ARCHIVE_NAME }}
-            dist/${{ env.ARCHIVE_NAME }}.sha256
+            dist/*.zip
+            dist/*.sha256
+            dist/verification-*.json
           if-no-files-found: error
+          retention-days: 7
+      - name: Upload failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: diagnostics-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: |
+            .build/**/worker.log
+            .build/freezer/**/*.txt
+          if-no-files-found: ignore
 
   release:
     name: Release
@@ -99,23 +74,15 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
       - uses: actions/download-artifact@v4
         with:
           path: dist-download
           pattern: dist-*
           merge-multiple: true
-      - name: Publish GitHub release
+      - name: Verify all platforms and publish complete release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          mkdir -p dist
-          cp dist-download/*.zip dist/ 2>/dev/null || true
-          cp dist-download/*.sha256 dist/ 2>/dev/null || true
-          sort dist/*.sha256 > dist/checksums.txt
-          gh release upload "${GITHUB_REF_NAME}" dist/*.zip dist/checksums.txt --clobber || \
-          gh release create "${GITHUB_REF_NAME}" dist/*.zip dist/checksums.txt \
-            --repo "${GITHUB_REPOSITORY}" \
-            --verify-tag \
-            --title "${GITHUB_REF_NAME}" \
-            --notes-file RELEASE_NOTES.md
+        run: python -B .github/scripts/publish.py

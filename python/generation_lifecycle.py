@@ -56,7 +56,8 @@ class TaskPipe:
                 # 创建、且带插件专用 profile 的 Chrome，以便让取消立即生效。
                 if not active.is_set(): return
                 import psutil
-                profile_root = str((__import__('pathlib').Path(__file__).parent/'flow2api/src/tmp').resolve()).lower()
+                profile = os.environ.get('PERSONAL_BROWSER_USER_DATA_DIR', '').strip()
+                profile_root = str((__import__('pathlib').Path(profile) if profile else __import__('pathlib').Path(__file__).parent/'flow2api/src/tmp').resolve()).lower()
                 for process in psutil.Process(os.getpid()).children(recursive=True):
                     try:
                         if process.name().lower() not in ('chrome.exe','msedge.exe','chromium.exe'): continue
