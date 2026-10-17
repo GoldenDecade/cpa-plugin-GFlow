@@ -55,11 +55,18 @@ pub fn library_path() -> Option<PathBuf> {
     }
 }
 
+fn runtime_data_dir(module: Option<&Path>, host: Option<&Path>) -> PathBuf {
+    if module.is_some_and(|path| path.components().any(|part| part.as_os_str() == "cliproxy-pluginhost")) {
+        return host.and_then(Path::parent).unwrap_or_else(|| Path::new("."))
+            .join("plugins").join("gflow").join("gflow-data");
+    }
+    module.or(host).and_then(Path::parent).unwrap_or_else(|| Path::new(".")).join("gflow-data")
+}
+
 pub fn default_data_dir() -> PathBuf {
-    let module = library_path().or_else(|| std::env::current_exe().ok());
-    module.and_then(|path| path.canonicalize().ok()).and_then(|path| path.parent().map(Path::to_path_buf))
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join("gflow-data")
+    let module = library_path().and_then(|path| path.canonicalize().ok());
+    let host = std::env::current_exe().ok();
+    runtime_data_dir(module.as_deref(), host.as_deref())
 }
 
 pub fn configured_data_dir(value: &str) -> PathBuf {
@@ -137,6 +144,14 @@ mod tests {
     fn relative_configuration_stays_under_the_plugin_data_directory() {
         assert_eq!(configured_data_dir("accounts"), default_data_dir().join("accounts"));
         assert_eq!(configured_data_dir(""), default_data_dir());
+    }
+
+    #[test]
+    fn host_shadow_library_uses_persistent_data_beside_the_host() {
+        let shadow = Path::new("temp/cliproxy-pluginhost/pid-100/gflow.dll");
+        let host = Path::new("installed/core/cli-proxy-api.exe");
+        assert_eq!(runtime_data_dir(Some(shadow), Some(host)), PathBuf::from("installed/core/plugins/gflow/gflow-data"));
+        assert_eq!(runtime_data_dir(Some(Path::new("installed/plugins/gflow.dll")), Some(host)), PathBuf::from("installed/plugins/gflow-data"));
     }
 
     #[test]

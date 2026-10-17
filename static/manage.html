@@ -249,7 +249,7 @@
       <span style="font-size:12px; color:var(--text-muted);">CLIProxyAPI 插件</span>
     </div>
     <div class="header-actions">
-      <button id="refresh-button" class="btn btn-secondary btn-sm" onclick="initializeManagement()" disabled>刷新状态</button>
+      <button id="refresh-button" class="btn btn-secondary btn-sm" onclick="refreshManagement()">刷新状态</button>
     </div>
   </header>
 
@@ -538,6 +538,9 @@
     }
 
     function resetConnection(message = '正在自动连接插件管理接口…', isError = false) {
+      connectionGeneration += 1;
+      clearInterval(autoRefresh);
+      autoRefresh = null;
       managementKey = '';
       configLoaded = false;
       document.getElementById('refresh-button').disabled = false;
@@ -552,6 +555,7 @@
       allModels = [];
       tableMessage('models-tbody', 3, '等待自动连接', message);
       document.getElementById('cfg-yescaptcha-key').value = '';
+      document.getElementById('plugin-version').textContent = '未连接';
       connectionMessage(message, isError);
     }
 
@@ -604,6 +608,11 @@
       await loadAll();
     }
 
+    async function refreshManagement() {
+      if (managementKey) return loadAll();
+      return initializeManagement();
+    }
+
     async function apiRequest(path, method = 'GET', body = null) {
       if (!managementKey) {
         const error = new Error('插件尚未连接，请先登录管理中心或使用手动连接。');
@@ -613,38 +622,44 @@
       // 仅向当前内核的管理路由发送密钥。
       if (!path.startsWith('/v0/management/plugins/gflow/')) throw new Error('无效的管理接口地址。');
       const requestKey = managementKey;
+      const requestGeneration = connectionGeneration;
       const headers = { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + requestKey };
       const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 30000);
-      let resp;
+      const timer = setTimeout(() => controller.abort(), 120000);
       try {
-        resp = await fetch(path, { method, headers, body: body ? JSON.stringify(body) : undefined, signal: controller.signal, cache: 'no-store' });
+        const resp = await fetch(path, { method, headers, body: body ? JSON.stringify(body) : undefined, signal: controller.signal, cache: 'no-store' });
+        if (requestKey !== managementKey || requestGeneration !== connectionGeneration) throw new Error('连接已变更，请重新加载。');
+        if (resp.status === 401 || resp.status === 403) {
+          const message = '管理鉴权失败（HTTP ' + resp.status + '）：请重新登录管理中心或更新临时输入的管理密钥。';
+          resetConnection(message, true);
+          document.getElementById('connection-setup').hidden = false;
+          const error = new Error(message);
+          error.status = resp.status;
+          throw error;
+        }
+        const data = await resp.json();
+        if (requestKey !== managementKey || requestGeneration !== connectionGeneration) throw new Error('连接已变更，请重新加载。');
+        if (!resp.ok) {
+          const message = resp.status === 504 ? '后台响应超时，可刷新状态。已提交的操作可能仍在运行，请勿重复提交。'
+            : (typeof data.error === 'string' ? data.error : (data.error?.message || '管理接口请求失败（HTTP ' + resp.status + '）'));
+          const error = new Error(message);
+          error.status = resp.status;
+          throw error;
+        }
+        return data;
       } catch (error) {
+        if (requestKey !== managementKey || requestGeneration !== connectionGeneration) {
+          const changed = new Error('连接已变更，请重新加载。');
+          changed.code = 'connection_changed';
+          changed.status = error.status;
+          throw changed;
+        }
         if (error.name === 'AbortError') throw new Error('管理接口响应超时，请重试或检查内核运行状态。');
-        throw new Error('无法连接本机内核，请检查 EasyCPA 内核是否正在运行。');
+        if (error instanceof TypeError) throw new Error('无法连接本机内核，请检查 EasyCPA 内核是否正在运行。');
+        throw error;
       } finally {
         clearTimeout(timer);
       }
-      if (requestKey !== managementKey) throw new Error('连接已变更，请重新加载。');
-      if (resp.status === 401 || resp.status === 403) {
-        const message = '管理鉴权失败（HTTP ' + resp.status + '）：请重新登录管理中心或更新临时输入的管理密钥。';
-        resetConnection(message, true);
-        document.getElementById('connection-setup').hidden = false;
-        const error = new Error(message);
-        error.status = resp.status;
-        throw error;
-      }
-      if (!resp.ok) {
-        let message = '管理接口请求失败（HTTP ' + resp.status + '）';
-        try {
-          const data = await resp.json();
-          message = typeof data.error === 'string' ? data.error : (data.error?.message || message);
-        } catch (_) {}
-        const error = new Error(message);
-        error.status = resp.status;
-        throw error;
-      }
-      return await resp.json();
     }
 
     function showToast(text, type = 'success') {
@@ -678,9 +693,14 @@
         connectionMessage('已自动连接，Python 后台已响应；账号登录校验与生成结果请查看下方状态。');
         return true;
       } catch (e) {
+        if (e.code === 'connection_changed') return false;
         if (e.status !== 401 && e.status !== 403) {
+          document.getElementById('plugin-version').textContent = '连接失败';
           document.getElementById('stat-python-ver').textContent = '后台状态获取失败';
           document.getElementById('stat-python-path').textContent = e.message;
+          document.getElementById('add-token-button').disabled = true;
+          tableMessage('tokens-tbody', 7, '后台暂时无响应', '账号同步成功不代表控制台读取成功。可点击刷新状态，页面也会自动重试读取；不会重新提交同步或生成。');
+          tableMessage('models-tbody', 3, '模型列表暂不可用', e.message);
           connectionMessage(e.message, true);
         }
         return false;
@@ -928,15 +948,40 @@
       }
     }
 
-    async function loadAll() {
+    let connectionGeneration = 0;
+    let refreshTask = null;
+    let autoRefresh = null;
+
+    async function loadAll(includeSettings = true) {
       if (!managementKey) {
         resetConnection();
         return;
       }
-      configLoaded = false;
-      document.getElementById('save-settings-button').disabled = true;
-      if (!await loadStatus()) return;
-      await Promise.allSettled([loadTokens(), loadConfig(), loadModels()]);
+      const generation = connectionGeneration;
+      if (refreshTask?.generation === generation) return refreshTask.promise;
+      const task = { generation, promise: null };
+      refreshTask = task;
+      const button = document.getElementById('refresh-button');
+      button.disabled = true;
+      button.textContent = '正在刷新…';
+      document.getElementById('plugin-version').textContent = '连接中';
+      task.promise = (async () => {
+        if (includeSettings) {
+          configLoaded = false;
+          document.getElementById('save-settings-button').disabled = true;
+        }
+        if (!await loadStatus() || generation !== connectionGeneration) return;
+        await Promise.allSettled(includeSettings ? [loadTokens(), loadConfig(), loadModels()] : [loadTokens()]);
+      })().finally(() => {
+        if (refreshTask === task) refreshTask = null;
+        if (generation !== connectionGeneration) return;
+        button.disabled = false;
+        button.textContent = '刷新状态';
+        if (!autoRefresh && managementKey) {
+          autoRefresh = setInterval(() => { if (!document.hidden && managementKey) loadAll(false); }, 15000);
+        }
+      });
+      return task.promise;
     }
 
     window.addEventListener('DOMContentLoaded', () => initializeManagement());

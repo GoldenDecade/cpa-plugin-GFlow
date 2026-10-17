@@ -89,9 +89,14 @@ class GFlowService:
         self.load_balancer = None
         self.generation_handler = None
         self.initialized = False
+        self.initialization_lock = asyncio.Lock()
         self.account_validation_failures = {}
 
     async def initialize(self):
+        async with self.initialization_lock:
+            await self._initialize()
+
+    async def _initialize(self):
         if self.initialized:
             return
 
@@ -471,8 +476,10 @@ async def main():
         data_dir = Path(__file__).resolve().parent.parent / "data"
 
     from generation_lifecycle import GenerationLifecycle
+    from worker_dispatch import ManagementDispatcher
     service = GFlowService(data_dir)
     lifecycle = GenerationLifecycle(service)
+    dispatcher = ManagementDispatcher(service)
     await lifecycle.start()
     service.send_line({"ready": True, "pid": os.getpid(), "data_dir": str(data_dir)})
 
@@ -504,18 +511,9 @@ async def main():
             lifecycle.submit(req_id, params)
             continue
 
-        handler = getattr(service, f"handle_{cmd}", None)
-        if handler:
-            try:
-                res = await handler(params)
-                service.send_line({"id": req_id, "done": True, "result": res})
-            except Exception as e:
-                tb = traceback.format_exc()
-                sys.stderr.write(f"[GFlowService] Error in {cmd}: {tb}\n")
-                service.send_line({"id": req_id, "done": True, "error": {"message": str(e), "traceback": tb}})
-        else:
-            service.send_line({"id": req_id, "done": True, "error": {"message": f"Unknown command: {cmd}"}})
+        dispatcher.submit(req_id, cmd, params)
 
+    await dispatcher.shutdown()
     await lifecycle.shutdown()
 
 

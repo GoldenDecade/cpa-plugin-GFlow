@@ -14,7 +14,7 @@ function element() {
     style: {}, children: [], append(...nodes) { this.children.push(...nodes); },
     replaceChildren(...nodes) { this.children = nodes; }, focus() {}, select() { this.selected = true; } };
 }
-const events = new Map(), requests = [];
+const events = new Map(), requests = [], intervals = new Map();
 let mode = 'ok', copiedConfig = '', clipboardDenied = false;
 const location = { origin: 'http://127.0.0.1:8317', host: '127.0.0.1:8317', hash: '', pathname: '/v0/resource/plugins/gflow/manage', search: '' };
 const login = JSON.stringify({state:{managementKey:'test-management-secret',apiBase:location.origin}});
@@ -32,7 +32,11 @@ const context = vm.createContext({
   navigator: { userAgent: 'synthetic-agent', clipboard: { async writeText(value) {
     if (clipboardDenied) throw new Error('clipboard denied'); copiedConfig = value;
   } } },
-  console, AbortController, URL, TextEncoder, TextDecoder, setTimeout, clearTimeout,
+  console, AbortController, URL, TextEncoder, TextDecoder,
+  setTimeout(callback, milliseconds) { return setTimeout(callback, milliseconds === 120000 ? 25 : milliseconds); },
+  clearTimeout,
+  setInterval(callback) { const id = intervals.size + 1; intervals.set(id, callback); return id; },
+  clearInterval(id) { intervals.delete(id); },
   atob: value => Buffer.from(value, 'base64').toString('binary'),
   fetch: async (path, opts) => {
     requests.push({ path, opts });
@@ -40,6 +44,12 @@ const context = vm.createContext({
     assert.equal(opts.headers.Authorization, 'Bearer test-management-secret');
     let status = mode === 'wrong' ? 401 : 200;
     if (mode === 'config-failure' && path.endsWith('/config')) status = 500;
+    if (mode === 'timeout' && path.endsWith('/status')) {
+      return new Promise((resolve, reject) => opts.signal.addEventListener('abort', () => reject(Object.assign(new Error('aborted'), {name:'AbortError'}))));
+    }
+    if (mode === 'slow-body' && path.endsWith('/status')) {
+      return {status:200,ok:true,json:() => new Promise((resolve,reject) => opts.signal.addEventListener('abort', () => reject(Object.assign(new Error('aborted'), {name:'AbortError'}))))};
+    }
     const data = path.endsWith('/status')
       ? { total_tokens: 0, active_tokens: 0, total_credits: 0, version: '3.12.0', python: '/plugin/gflow-data/runtime/gflow-worker' }
       : path.endsWith('/tokens') ? { tokens: [], total: 0 }
@@ -100,6 +110,30 @@ const el = id => context.document.getElementById(id);
   assert.equal(requests.length, beforeSave);
   console.log('PASS failed configuration loading cannot overwrite settings');
 
+  mode = 'timeout';
+  await context.loadAll();
+  assert.equal(el('refresh-button').disabled, false);
+  assert.equal(el('plugin-version').textContent, '连接失败');
+  assert.equal(el('tokens-tbody').children[0].children[0].children[0].textContent, '后台暂时无响应');
+  mode = 'ok';
+  await context.refreshManagement();
+  assert.equal(el('stat-python-ver').textContent, 'Python 3.12.0');
+  console.log('PASS timeouts leave a usable retry button and an honest account state');
+
+  mode = 'slow-body';
+  await context.loadAll();
+  assert.match(el('connection-status').textContent, /超时/);
+  mode = 'ok';
+  await context.refreshManagement();
+  console.log('PASS the timeout also bounds reading the response body');
+
+  el('cfg-yescaptcha-key').value = 'unsaved-local-edit';
+  const beforeAutomatic = requests.length;
+  await context.loadAll(false);
+  assert.equal(el('cfg-yescaptcha-key').value, 'unsaved-local-edit');
+  assert.ok(!requests.slice(beforeAutomatic).some(request => request.path.endsWith('/config') || request.opts.method !== 'GET'));
+  console.log('PASS automatic status polling preserves unsaved settings and only reads state');
+
   savedLogin = '';
   const beforeMissing = requests.length;
   await context.initializeManagement();
@@ -119,6 +153,8 @@ const el = id => context.document.getElementById(id);
   assert.equal(el('connection-key').value, '');
   assert.equal(savedLogin, '');
   assert.equal(el('save-settings-button').disabled, false);
+  await context.refreshManagement();
+  assert.equal(el('stat-python-ver').textContent, 'Python 3.12.0');
   console.log('PASS manual fallback keeps credentials only in memory');
 
   await assert.rejects(context.apiRequest('https://other.example/api'));
@@ -144,7 +180,7 @@ class ManagementUITest(unittest.TestCase):
             capture_output=True, text=True, encoding="utf-8", timeout=20,
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertEqual(result.stdout.count("PASS "), 10, result.stdout)
+        self.assertEqual(result.stdout.count("PASS "), 13, result.stdout)
         print(result.stdout, end="")
 
 

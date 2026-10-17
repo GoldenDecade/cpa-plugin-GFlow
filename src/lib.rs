@@ -561,7 +561,7 @@ fn handle_management_handle(req: &[u8]) -> Result<Vec<u8>, String> {
             });
             serde_json::to_vec(&out).map_err(|e| e.to_string())
         }
-        Err(e) => Ok(management_error(500, &e)),
+        Err(e) => Ok(management_error(if e.starts_with("GFlow backend request timed out") { 504 } else { 500 }, &e)),
     }
 }
 

@@ -1,7 +1,46 @@
 use std::io::{BufRead, BufReader, Write};
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process::{Child, ChildStdin, Command, Stdio};
-use std::sync::{Arc, Mutex};
+use std::sync::{mpsc, Arc, Mutex};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{Duration, Instant};
+
+type WorkerMessage = Result<serde_json::Value, String>;
+type PendingRequests = Arc<Mutex<HashMap<String, mpsc::Sender<WorkerMessage>>>>;
+static REQUEST_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+
+struct WorkerRequest {
+    id: String,
+    receiver: mpsc::Receiver<WorkerMessage>,
+    pending: PendingRequests,
+}
+
+impl WorkerRequest {
+    fn receive(&self, deadline: Instant) -> WorkerMessage {
+        self.receiver.recv_timeout(deadline.saturating_duration_since(Instant::now()))
+            .map_err(|error| match error {
+                mpsc::RecvTimeoutError::Timeout => "GFlow backend request timed out; the operation may still be running; no automatic retry".to_string(),
+                mpsc::RecvTimeoutError::Disconnected => "GFlow worker connection ended without a completion receipt; generation result is unknown".to_string(),
+            })?
+    }
+}
+
+impl Drop for WorkerRequest {
+    fn drop(&mut self) {
+        if let Ok(mut pending) = self.pending.lock() {
+            pending.remove(&self.id);
+        }
+    }
+}
+
+fn fail_pending(pending: &PendingRequests, message: &str) {
+    if let Ok(mut requests) = pending.lock() {
+        for (_, sender) in requests.drain() {
+            let _ = sender.send(Err(message.to_string()));
+        }
+    }
+}
 
 #[derive(Clone)]
 pub struct WorkerManager {
@@ -11,7 +50,7 @@ pub struct WorkerManager {
 struct WorkerInner {
     child: Option<Child>,
     stdin: Option<ChildStdin>,
-    reader: Option<BufReader<std::process::ChildStdout>>,
+    pending: PendingRequests,
     data_dir: PathBuf,
     #[cfg(test)]
     fixture_command: Option<(PathBuf, PathBuf)>,
@@ -23,7 +62,7 @@ impl WorkerManager {
             inner: Arc::new(Mutex::new(WorkerInner {
                 child: None,
                 stdin: None,
-                reader: None,
+                pending: Arc::new(Mutex::new(HashMap::new())),
                 data_dir,
                 #[cfg(test)]
                 fixture_command: None,
@@ -46,128 +85,61 @@ impl WorkerManager {
     }
 
     pub fn execute(&self, cmd: &str, params: serde_json::Value) -> Result<serde_json::Value, String> {
-        let mut lock = self.inner.lock().map_err(|e| e.to_string())?;
-        let mut last_err = String::new();
-
-        // Never replay a paid generation when transport loses its receipt.
-        let attempts = if cmd == "chat_completion" { 1 } else { 2 };
-        for _ in 0..attempts {
-            if let Err(e) = lock.ensure_started() {
-                last_err = e;
-                continue;
+        let timeout = match cmd {
+            "chat_completion" => Duration::from_secs(1800),
+            "ping" | "status" | "list_tokens" | "list_models" | "get_config" => Duration::from_secs(20),
+            _ => Duration::from_secs(120),
+        };
+        let request = self.send_request(cmd, params)?;
+        let deadline = Instant::now() + timeout;
+        loop {
+            let response = request.receive(deadline)?;
+            if let Some(error) = response.get("error") {
+                return Err(error.get("message").and_then(|value| value.as_str()).unwrap_or("Worker error").to_string());
             }
-
-            let req_id = format!("req_{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos());
-            let msg = serde_json::json!({
-                "id": req_id,
-                "cmd": cmd,
-                "params": params,
-            });
-
-            let mut line = match serde_json::to_string(&msg) {
-                Ok(l) => l,
-                Err(e) => return Err(e.to_string()),
-            };
-            line.push('\n');
-
-            let write_res = if let Some(stdin) = lock.stdin.as_mut() {
-                stdin.write_all(line.as_bytes()).and_then(|_| stdin.flush())
-            } else {
-                Err(std::io::Error::new(std::io::ErrorKind::BrokenPipe, "stdin is None"))
-            };
-
-            if let Err(e) = write_res {
-                last_err = e.to_string();
-                lock.stop();
-                continue;
+            if response.get("done").and_then(|value| value.as_bool()) == Some(true) {
+                return Ok(response.get("result").cloned().unwrap_or(serde_json::Value::Null));
             }
-
-            let mut resp_line = String::new();
-            let read_res = if let Some(reader) = lock.reader.as_mut() {
-                reader.read_line(&mut resp_line)
-            } else {
-                Err(std::io::Error::new(std::io::ErrorKind::BrokenPipe, "reader is None"))
-            };
-
-            if let Err(e) = read_res {
-                last_err = e.to_string();
-                lock.stop();
-                continue;
-            }
-
-            if resp_line.trim().is_empty() {
-                last_err = "Worker connection ended before a generation receipt was confirmed; no automatic generation retry".to_string();
-                lock.stop();
-                continue;
-            }
-
-            let parsed: serde_json::Value = match serde_json::from_str(resp_line.trim()) {
-                Ok(v) => v,
-                Err(e) => {
-                    last_err = format!("Failed to parse worker response: {e}");
-                    lock.stop();
-                    continue;
-                }
-            };
-
-            if let Some(err) = parsed.get("error") {
-                let msg = err.get("message").and_then(|m| m.as_str()).unwrap_or("Worker error");
-                return Err(msg.to_string());
-            }
-
-            return Ok(parsed.get("result").cloned().unwrap_or(serde_json::Value::Null));
         }
-
-        Err(format!("Worker command {cmd} failed after retries: {last_err}"))
     }
 
     pub fn execute_stream<F>(&self, params: serde_json::Value, mut on_chunk: F) -> Result<(), String>
     where
         F: FnMut(&str) -> Result<(), String>,
     {
-        let mut lock = self.inner.lock().map_err(|e| e.to_string())?;
-        lock.ensure_started()?;
-
-        let req_id = format!("stream_{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos());
-        let msg = serde_json::json!({
-            "id": req_id,
-            "cmd": "chat_completion",
-            "params": params,
-        });
-
-        let mut line = serde_json::to_string(&msg).map_err(|e| e.to_string())?;
-        line.push('\n');
-
-        let stdin = lock.stdin.as_mut().ok_or_else(|| "Worker stdin unavailable".to_string())?;
-        stdin.write_all(line.as_bytes()).map_err(|e| e.to_string())?;
-        stdin.flush().map_err(|e| e.to_string())?;
-
-        let reader = lock.reader.as_mut().ok_or_else(|| "Worker stdout unavailable".to_string())?;
+        let request = self.send_request("chat_completion", params)?;
+        let deadline = Instant::now() + Duration::from_secs(1800);
         loop {
-            let mut chunk_line = String::new();
-            if reader.read_line(&mut chunk_line).map_err(|e| e.to_string())? == 0 {
-                return Err("GFlow stream ended without a completion receipt; generation result is unknown".to_string());
+            let response = request.receive(deadline)?;
+            if let Some(error) = response.get("error") {
+                return Err(error.get("message").and_then(|value| value.as_str()).unwrap_or("Stream generation error").to_string());
             }
-            let trimmed = chunk_line.trim();
-            if trimmed.is_empty() {
-                continue;
+            if response.get("done").and_then(|value| value.as_bool()) == Some(true) {
+                return Ok(());
             }
-            if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(trimmed) {
-                if parsed.get("id").and_then(|i| i.as_str()) == Some(&req_id) {
-                    if let Some(err) = parsed.get("error") {
-                        let msg = err.get("message").and_then(|m| m.as_str()).unwrap_or("Stream generation error");
-                        return Err(msg.to_string());
-                    }
-                    if parsed.get("done").and_then(|d| d.as_bool()) == Some(true) {
-                        break;
-                    }
-                    if let Some(chunk_text) = parsed.get("chunk").and_then(|c| c.as_str()) {
-                        on_chunk(chunk_text)?;
-                    }
-                }
+            if let Some(chunk) = response.get("chunk").and_then(|value| value.as_str()) {
+                on_chunk(chunk)?;
             }
         }
-        Ok(())
+    }
+
+    fn send_request(&self, command: &str, params: serde_json::Value) -> Result<WorkerRequest, String> {
+        let mut inner = self.inner.lock().map_err(|error| error.to_string())?;
+        inner.ensure_started()?;
+        let id = format!("req_{}_{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos(), REQUEST_SEQUENCE.fetch_add(1, Ordering::Relaxed));
+        let (sender, receiver) = mpsc::channel();
+        let request = WorkerRequest { id: id.clone(), receiver, pending: inner.pending.clone() };
+        inner.pending.lock().map_err(|error| error.to_string())?.insert(id.clone(), sender);
+        let mut payload = serde_json::to_vec(&serde_json::json!({"id": id, "cmd": command, "params": params}))
+            .map_err(|error| error.to_string())?;
+        payload.push(b'\n');
+        let stdin = inner.stdin.as_mut().ok_or_else(|| "Worker stdin unavailable".to_string())?;
+        let result = stdin.write_all(&payload).and_then(|_| stdin.flush());
+        if let Err(error) = result {
+            inner.stop();
+            return Err(format!("GFlow worker write failed; request was not retried: {error}"));
+        }
+        Ok(request)
     }
 
     pub fn shutdown(&self) {
@@ -227,14 +199,32 @@ impl WorkerInner {
 
         let stdin = child.stdin.take().ok_or_else(|| "Failed to capture stdin".to_string())?;
         let stdout = child.stdout.take().ok_or_else(|| "Failed to capture stdout".to_string())?;
+        self.pending = Arc::new(Mutex::new(HashMap::new()));
+        let pending = self.pending.clone();
         let (sender, receiver) = std::sync::mpsc::sync_channel(1);
         std::thread::spawn(move || {
             let mut reader = BufReader::new(stdout);
             let mut ready_line = String::new();
-            let result = reader.read_line(&mut ready_line).map(|_| (reader, ready_line));
-            let _ = sender.send(result);
+            let result = reader.read_line(&mut ready_line).map(|_| ready_line);
+            if sender.send(result).is_err() { return; }
+            loop {
+                let mut line = String::new();
+                match reader.read_line(&mut line) {
+                    Ok(0) | Err(_) => break,
+                    Ok(_) => {}
+                }
+                if line.trim().is_empty() { continue; }
+                let Ok(response) = serde_json::from_str::<serde_json::Value>(line.trim()) else { break; };
+                let Some(id) = response.get("id").and_then(|value| value.as_str()) else { continue; };
+                let finished = response.get("done").and_then(|value| value.as_bool()) == Some(true) || response.get("error").is_some();
+                let recipient = pending.lock().ok().and_then(|mut requests| {
+                    if finished { requests.remove(id) } else { requests.get(id).cloned() }
+                });
+                if let Some(recipient) = recipient { let _ = recipient.send(Ok(response)); }
+            }
+            fail_pending(&pending, "GFlow worker connection ended without a completion receipt; generation result is unknown; no automatic retry");
         });
-        let (reader, ready_line) = match receiver.recv_timeout(std::time::Duration::from_secs(90)) {
+        let ready_line = match receiver.recv_timeout(std::time::Duration::from_secs(90)) {
             Ok(Ok(result)) => result,
             _ => {
                 let _ = child.kill();
@@ -251,12 +241,12 @@ impl WorkerInner {
 
         self.child = Some(child);
         self.stdin = Some(stdin);
-        self.reader = Some(reader);
 
         Ok(())
     }
 
     fn stop(&mut self) {
+        fail_pending(&self.pending, "GFlow worker stopped before a completion receipt; generation result is unknown; no automatic retry");
         if let Some(mut stdin) = self.stdin.take() {
             let _ = stdin.write_all(b"{\"cmd\":\"shutdown\"}\n");
             let _ = stdin.flush();
@@ -271,7 +261,6 @@ impl WorkerInner {
             }
             let _ = child.wait();
         }
-        self.reader = None;
     }
 
 }
@@ -309,6 +298,39 @@ mod tests {
         let worker = fixture();
         let result = worker.execute_stream(serde_json::json!({"stream": true, "force_eof": true}), |_| Ok(()));
         assert!(result.unwrap_err().contains("without a completion receipt"));
+        worker.shutdown();
+    }
+
+    #[test]
+    fn management_status_is_not_blocked_by_a_stream() {
+        let worker = fixture();
+        let streaming = worker.clone();
+        let (started, ready) = mpsc::channel();
+        let generation = std::thread::spawn(move || streaming.execute_stream(
+            serde_json::json!({"stream": true, "hold_for_release": true}),
+            |_| { let _ = started.send(()); Ok(()) },
+        ));
+        ready.recv_timeout(Duration::from_secs(5)).unwrap();
+        let management = worker.clone();
+        let (sender, receiver) = mpsc::channel();
+        let lookup = std::thread::spawn(move || {
+            let _ = sender.send(management.execute("status", serde_json::json!({})));
+        });
+        let response = receiver.recv_timeout(Duration::from_secs(2)).expect("status was blocked by generation").unwrap();
+        assert_eq!(response["total_tokens"], 1);
+        worker.execute("release", serde_json::json!({})).unwrap();
+        lookup.join().unwrap();
+        generation.join().unwrap().unwrap();
+        worker.shutdown();
+    }
+
+    #[test]
+    fn timed_out_reader_does_not_stop_other_requests() {
+        let worker = fixture();
+        let pending = worker.send_request("stall", serde_json::json!({})).unwrap();
+        assert!(pending.receive(Instant::now() + Duration::from_millis(20)).unwrap_err().contains("timed out"));
+        drop(pending);
+        assert_eq!(worker.execute("status", serde_json::json!({})).unwrap()["total_tokens"], 1);
         worker.shutdown();
     }
 }
