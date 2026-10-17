@@ -174,7 +174,7 @@ class GFlowService:
             "active_tokens": len(active),
             "total_credits": total_credits,
             "extension_sync": getattr(self, "last_extension_sync", None),
-            "sync_revision": "20261017.1",
+            "sync_revision": "20261017.2",
         }
 
     async def handle_list_tokens(self, _params: Dict[str, Any]) -> Dict[str, Any]:
@@ -282,10 +282,30 @@ class GFlowService:
         return {"success": True, "token_id": tid, "is_active": enabled}
 
     async def handle_refresh_credits(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """手动查额仅调用原版额度接口；失败不伪装成零余额，也不启动登录浏览器。"""
         await self.initialize()
         tid = int(params.get("token_id", 0))
-        res = await self.token_manager.refresh_credits(tid)
-        return {"success": True, "credits": int(res or 0)}
+        token = await self.db.get_token(tid)
+        if token is None:
+            return {"success": False, "status_code": 404,
+                    "error": {"code": "gflow_account_not_found", "message": "GFlow 账号不存在"}}
+        try:
+            result = await self.flow_client.get_credits(
+                token.at, google_cookies=token.google_cookies, token_id=tid,
+            )
+        except Exception as error:
+            from extension_sync import classify_sync_failure
+            failure = classify_sync_failure(error)
+            if failure.code == "gflow_google_auth_rejected":
+                return {"success": False, "status_code": 401,
+                        "error": {"code": "gflow_session_expired",
+                                  "message": "Google 未接受 GFlow 保存的登录态，请在已登录的 Flow 网页通过登录助手更新；历史余额保持不变。"}}
+            return failure.result()
+        credits = int(result.get("credits", 0))
+        await self.db.update_token(
+            tid, credits=credits, user_paygate_tier=result.get("userPaygateTier"),
+        )
+        return {"success": True, "credits": credits}
 
     async def handle_get_config(self, _params: Dict[str, Any]) -> Dict[str, Any]:
         await self.initialize()
