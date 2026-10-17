@@ -90,6 +90,7 @@ class GFlowService:
         self.load_balancer = None
         self.generation_handler = None
         self.initialized = False
+        self.account_validation_failures = {}
 
     async def initialize(self):
         if self.initialized:
@@ -159,22 +160,30 @@ class GFlowService:
     async def handle_ping(self, _params: Dict[str, Any]) -> Dict[str, Any]:
         return {"pong": True}
 
+    def _account_health(self, token):
+        from account_health import account_health
+        cache = getattr(self.token_manager, "_at_validation_cache", {})
+        failures = getattr(self, "account_validation_failures", {})
+        return account_health(
+            token, recent_validation_expires=cache.get(token.id, 0),
+            validation_failure=failures.get(token.id),
+        )
+
     async def handle_status(self, _params: Dict[str, Any]) -> Dict[str, Any]:
         await self.initialize()
         tokens = await self.token_manager.get_all_tokens()
-        active = [t for t in tokens if t.is_active and not t.ban_reason]
-        total_credits = sum(getattr(t, "credits", 0) or 0 for t in active)
+        from account_health import summarize_account_health
+        health = {t.id: self._account_health(t) for t in tokens}
+        summary = summarize_account_health(tokens, health)
         return {
             "initialized": self.initialized,
             "python": sys.executable,
             "version": sys.version.split()[0],
             "database_path": self.db_path,
             "cache_dir": str(self.tmp_dir),
-            "total_tokens": len(tokens),
-            "active_tokens": len(active),
-            "total_credits": total_credits,
+            **summary,
             "extension_sync": getattr(self, "last_extension_sync", None),
-            "sync_revision": "20261017.2",
+            "sync_revision": "20261017.3",
         }
 
     async def handle_list_tokens(self, _params: Dict[str, Any]) -> Dict[str, Any]:
@@ -195,6 +204,7 @@ class GFlowService:
                 "name": t.name or "",
                 "remark": t.remark or "",
                 "is_active": t.is_active,
+                "health": self._account_health(t),
                 "credits": t.credits,
                 "user_paygate_tier": t.user_paygate_tier or "FREE",
                 "current_project_id": t.current_project_id or "",
@@ -296,6 +306,8 @@ class GFlowService:
         except Exception as error:
             from extension_sync import classify_sync_failure
             failure = classify_sync_failure(error)
+            self.account_validation_failures[tid] = failure.code
+            self.token_manager._clear_at_validation_cache(tid)
             if failure.code == "gflow_google_auth_rejected":
                 return {"success": False, "status_code": 401,
                         "error": {"code": "gflow_session_expired",
@@ -305,6 +317,8 @@ class GFlowService:
         await self.db.update_token(
             tid, credits=credits, user_paygate_tier=result.get("userPaygateTier"),
         )
+        self.token_manager._mark_at_valid(tid)
+        self.account_validation_failures.pop(tid, None)
         return {"success": True, "credits": credits}
 
     async def handle_get_config(self, _params: Dict[str, Any]) -> Dict[str, Any]:

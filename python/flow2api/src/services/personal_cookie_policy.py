@@ -55,3 +55,51 @@ def scoped_personal_cookies(raw_cookie):
             and (c["name"], c["value"], c.get("path", "/")) in parent_logins
         )
     ]
+
+
+def merge_personal_cookie_payloads(base_cookie, browser_cookie_items):
+    """先恢复旧请求头的站点边界，再按浏览器真实作用域回填更新值。"""
+    from .browser_cookie_utils import merge_browser_cookie_payloads
+
+    # 原始 Cookie 头没有域信息；若直接交给通用合并器，会把所有登录
+    # Cookie 当作 Flow 主机副本，与浏览器导出的 .google.com 再存一份。
+    previous = scoped_personal_cookies(base_cookie)
+    current = scoped_personal_cookies(browser_cookie_items)
+    structured = isinstance(base_cookie, (dict, list)) or str(base_cookie or "").lstrip().startswith(("[", "{"))
+    if not structured:
+        from .browser_cookie_utils import parse_browser_cookie_payload
+        raw_pairs = {
+            (cookie["name"], cookie["value"], cookie.get("path", "/"))
+            for cookie in parse_browser_cookie_payload(base_cookie)
+        }
+
+        def flow_host(cookie):
+            return (urlparse(cookie.get("url", "")).hostname == "flow.google.com"
+                    or str(cookie.get("domain", "")).lstrip(".").lower() == "flow.google.com")
+
+        def reaches_flow(cookie):
+            domain = str(cookie.get("domain", "")).lstrip(".").lower()
+            return flow_host(cookie) or bool(domain and "flow.google.com".endswith("." + domain))
+
+        # 只有本次仍保留原始头时，才能识别刚注入的无域 Flow 副本。
+        # 浏览器另有同名、同路径的真实站点条目时，用其作用域和值；
+        # 不对已有结构化数据推断来源，也不跨路径合并合法 Cookie。
+        authoritative = {
+            (cookie["name"], cookie.get("path", "/"))
+            for cookie in current if not flow_host(cookie) and reaches_flow(cookie)
+        }
+        current = [
+            cookie for cookie in current
+            if not (flow_host(cookie)
+                    and (cookie["name"], cookie["value"], cookie.get("path", "/")) in raw_pairs
+                    and (cookie["name"], cookie.get("path", "/")) in authoritative)
+        ]
+        observed = {(cookie["name"], cookie.get("path", "/"))
+                    for cookie in current if reaches_flow(cookie)}
+        previous = [cookie for cookie in previous
+                    if (cookie["name"], cookie.get("path", "/")) not in observed]
+    merged = merge_browser_cookie_payloads(previous, current)
+    if not merged:
+        return ""
+    # 清理同值的旧 Flow 登录镜像；不同主机、路径或值仍保留真实边界。
+    return json.dumps(scoped_personal_cookies(merged), ensure_ascii=False, separators=(",", ":"))

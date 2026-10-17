@@ -270,14 +270,14 @@
         <div class="stat-desc">已导入的 Google Flow 账号</div>
       </div>
       <div class="stat-card">
-        <div class="stat-title">活跃账号</div>
+        <div class="stat-title">近期登录校验通过</div>
         <div class="stat-value" id="stat-active-tokens">-</div>
-        <div class="stat-desc">可用且未被 429 禁用的账号</div>
+        <div class="stat-desc" id="stat-login-desc">登录校验结果；实际生成另需验证码与额度</div>
       </div>
       <div class="stat-card">
-        <div class="stat-title">总可用积分</div>
+        <div class="stat-title">启用账号缓存积分</div>
         <div class="stat-value" id="stat-total-credits">-</div>
-        <div class="stat-desc">VideoFX / Flow 积分汇总</div>
+        <div class="stat-desc">最近记录；缓存余额不代表当前可用</div>
       </div>
       <div class="stat-card">
         <div class="stat-title">Python 运行环境</div>
@@ -643,13 +643,14 @@
         const res = await apiRequest('/v0/management/plugins/gflow/api/status');
         document.getElementById('plugin-version').textContent = res.plugin_version ? 'v' + res.plugin_version : '版本未知';
         document.getElementById('stat-total-tokens').textContent = res.total_tokens ?? 0;
-        document.getElementById('stat-active-tokens').textContent = res.active_tokens ?? 0;
-        document.getElementById('stat-total-credits').textContent = (res.total_credits ?? 0).toLocaleString();
+        document.getElementById('stat-active-tokens').textContent = res.verified_tokens ?? '-';
+        document.getElementById('stat-login-desc').textContent = '已启用 ' + (res.enabled_tokens ?? '-') + ' 个；登录已验证不代表生成成功。';
+        document.getElementById('stat-total-credits').textContent = (res.cached_credits ?? res.total_credits ?? 0).toLocaleString();
         document.getElementById('stat-python-ver').textContent = 'Python ' + (res.version || '已就绪');
         document.getElementById('stat-python-path').textContent = res.python || '-';
         document.getElementById('refresh-button').disabled = false;
         document.getElementById('add-token-button').disabled = false;
-        connectionMessage('已自动连接，Python 后台已响应。');
+        connectionMessage('已自动连接，Python 后台已响应；账号登录校验与生成结果请查看下方状态。');
         return true;
       } catch (e) {
         if (e.status !== 401 && e.status !== 403) {
@@ -659,6 +660,26 @@
         }
         return false;
       }
+    }
+
+    function escapeAccountHealth(value) {
+      return String(value ?? '').replace(/[&<>"']/g, char => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+      }[char]));
+    }
+
+    function accountHealthBadge(token) {
+      // 旧后台未提供健康字段时也不再把 is_active 显示成绿色“正常”。
+      const fallback = token.ban_reason === 'session_expired'
+        ? { label: '登录态失效', level: 'danger', detail: '请通过登录助手重新同步。' }
+        : token.ban_reason
+          ? { label: '账号已禁用', level: 'danger', detail: '请检查禁用原因。' }
+          : token.is_active
+            ? { label: '已启用 · 未校验', level: 'warning', detail: '缓存积分不代表当前可用。' }
+            : { label: '已手动停用', level: 'warning', detail: '账号开关已关闭。' };
+      const health = token.health || fallback;
+      const level = ['success', 'warning', 'danger'].includes(health.level) ? health.level : 'warning';
+      return `<span class="badge badge-${level}" title="${escapeAccountHealth(health.detail)}">${escapeAccountHealth(health.label)}</span>`;
     }
 
     async function loadTokens() {
@@ -673,16 +694,12 @@
 
         let html = '';
         for (const t of tokens) {
-          const statusBadge = t.ban_reason 
-            ? `<span class="badge badge-danger">已禁用 (${t.ban_reason})</span>`
-            : t.is_active 
-              ? `<span class="badge badge-success">正常</span>`
-              : `<span class="badge badge-warning">已停用</span>`;
+          const statusBadge = accountHealthBadge(t);
 
           html += `<tr>
             <td><strong>#${t.id}</strong></td>
             <td>${t.email} <small style="color:var(--text-dim);">(${t.remark || '无备注'})</small></td>
-            <td><strong style="color:var(--primary); font-size:14px;">${t.credits ?? 0}</strong></td>
+            <td><strong style="color:var(--primary); font-size:14px;">${t.credits ?? 0}</strong><small style="display:block;color:var(--text-dim);">缓存记录</small></td>
             <td>${t.current_project_name || t.current_project_id || '-'}</td>
             <td>
               <span class="badge ${t.image_enabled ? 'badge-success' : 'badge-warning'}">图: ${t.image_enabled ? '开' : '关'}</span>
@@ -858,9 +875,10 @@
       try {
         await apiRequest('/v0/management/plugins/gflow/api/refresh', 'POST', { token_id: id });
         showToast('额度刷新成功！');
-        loadTokens();
+        loadAll();
       } catch (e) {
         showToast(e.message, 'error');
+        loadAll();
       }
     }
 

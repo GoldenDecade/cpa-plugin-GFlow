@@ -42,9 +42,9 @@ from .browser_cookie_utils import (
     build_browser_cookie_targets,
     build_cookie_signature,
     is_partitioned_cookie,
-    merge_browser_cookie_payloads,
     normalize_cookie_storage_text,
 )
+from .personal_cookie_policy import merge_personal_cookie_payloads
 
 # flow2api 缺少的配置常量和函数，内联定义
 TOKEN_POOL_SIZE_MAX = 500
@@ -7562,7 +7562,7 @@ class BrowserCaptchaService:
                 return False
 
             previous_cookie_text = await self._load_token_cookie(int(token_key))
-            merged_cookie_text = merge_browser_cookie_payloads(
+            merged_cookie_text = merge_personal_cookie_payloads(
                 previous_cookie_text, serialized_cookies
             )
             if not merged_cookie_text:
