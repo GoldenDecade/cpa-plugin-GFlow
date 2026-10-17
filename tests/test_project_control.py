@@ -365,6 +365,25 @@ class ProjectPersistenceTest(unittest.IsolatedAsyncioTestCase):
         finally:
             CURRENT_BINDING.reset(context)
 
+    async def test_every_token_manager_refresh_rechecks_bound_request_constraints(self):
+        value, _ = await self.create()
+        row = (await self.control._rows("workspace_id=?", (value["workspaceId"],)))[0]
+        row["_generation_constraints"] = (True,False,"image-4k")
+        context = CURRENT_BINDING.set(row)
+        try:
+            manager = SimpleNamespace(ensure_valid_token=AsyncMock())
+            for change in ({"image_enabled":False}, {"user_paygate_tier":"PAYGATE_TIER_NOT_PAID"},
+                           {"email":"other@example.invalid"}, {"id":self.token.id+1}, {"is_active":False}):
+                with self.subTest(change=change):
+                    manager.ensure_valid_token.return_value = self.token.model_copy(update=change)
+                    with self.assertRaises(ProjectControlError):
+                        await BoundTokenManager(manager).ensure_valid_token(self.token)
+            manager.ensure_valid_token.return_value = None
+            with self.assertRaises(ProjectControlError):
+                await BoundTokenManager(manager).ensure_valid_token(self.token)
+        finally:
+            CURRENT_BINDING.reset(context)
+
     async def test_actual_worker_stream_and_nonstream_keep_project_and_explicit_references(self):
         saved = sys.stdout
         try:
@@ -424,6 +443,20 @@ class ProjectPersistenceTest(unittest.IsolatedAsyncioTestCase):
         self.balancer.select_token.assert_not_awaited()
         self.manager.ensure_project_exists.assert_not_awaited()
         self.assertEqual(self.balancer.release_pending.await_count,4)
+        # 原生成器在 balancer 后会第二次刷新，此时开关变化也必须阻止进入生成管线。
+        self.manager.ensure_valid_token.side_effect = [
+            self.token, self.token.model_copy(update={"image_enabled":False})]
+        messages.clear()
+        with patch.object(routes,"generation_handler",handler):
+            await worker.handle_chat_completion("second-refresh-disabled",{
+                "model":"gflow-nano-banana-2-lite","stream":False,
+                "messages":[{"role":"user","content":"must not reach media pipeline"}],
+                "gflow_workspace_id":value["workspaceId"],"gflow_project_id":self.remote_id,
+                "gflow_instance_id":self.control.instance_id,
+            })
+        self.assertEqual(len(records),4)
+        self.assertIn("未启用",messages[-1]["error"]["message"])
+        self.assertIsNone(CURRENT_BINDING.get())
 
 class WorkerProjectContextTest(unittest.IsolatedAsyncioTestCase):
     def worker(self):

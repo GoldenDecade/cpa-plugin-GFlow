@@ -154,8 +154,9 @@ class BoundTokenManager:
     async def ensure_valid_token(self, token):
         result = await self.manager.ensure_valid_token(token)
         binding = CURRENT_BINDING.get()
-        if binding is not None and result and (result.id != binding["token_id"] or account_fingerprint(result) != binding["account_fingerprint"]):
-            raise ProjectControlError("project_account_conflict", "项目所属账号已变更", 409)
+        if binding is not None:
+            image, video, model = binding.get("_generation_constraints", (False, False, None))
+            BoundLoadBalancer._validate_token(result, binding, image, video, model)
         return result
 
 
@@ -184,6 +185,8 @@ class BoundLoadBalancer:
         if binding is None:
             return await self.balancer.select_token(**kwargs)
         image, video = kwargs.get("for_image_generation", False), kwargs.get("for_video_generation", False)
+        # 上游 handler 还会再次刷新；约束只留在该请求的 ContextVar 字典内，不落库。
+        binding["_generation_constraints"] = (image, video, kwargs.get("model"))
         token = await self.token_manager.get_token(binding["token_id"])
         self._validate_token(token, binding, image, video, kwargs.get("model"))
         token = await self.token_manager.ensure_valid_token(token)
