@@ -27,6 +27,7 @@ class Plugin(c.Structure):
     _fields_ = [("abi_version", c.c_uint32), ("call", Call), ("free_buffer", Free), ("shutdown", Shutdown)]
 
 
+@unittest.skipUnless(DLL.is_file(), "Native ABI smoke requires an available built Windows DLL")
 class BootstrapTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

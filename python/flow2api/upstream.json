@@ -1,0 +1,144 @@
+{
+  "repository": "https://github.com/TheSmallHanCat/flow2api",
+  "commit": "60e673b05fe2630189f49e6dd3b275c2c8599158",
+  "files": {
+    "python/flow2api/src/core/model_resolver.py": {
+      "upstream_path": "src/core/model_resolver.py",
+      "sha256": "674e174fd02e235b1c22925e89a428f71b636f8f4c67b0ca52c4cad1ae06e588"
+    },
+    "python/flow2api/src/services/flow_client.py": {
+      "upstream_path": "src/services/flow_client.py",
+      "sha256": "c92de27c40a590602a58a5a7e232d43ca3791da723b264fffe02f193a46261aa"
+    },
+    "python/flow2api/src/services/flow_current.py": {
+      "upstream_path": "src/services/flow_current.py",
+      "sha256": "93b4d0d04baf3db6fe7e43c367df7d5ef20ce402a5a2de0eb2d47f271e3948f7"
+    },
+    "python/flow2api/src/services/flow_frontend.py": {
+      "upstream_path": "src/services/flow_frontend.py",
+      "sha256": "5cd325cafd7c14b571fff7d6c4757f260cf25736a7f465c73de26157ed8f8991"
+    },
+    "tests/upstream/test_veo_lite_support.py": {
+      "upstream_path": "tests/test_veo_lite_support.py",
+      "sha256": "3c84293c88702a7b8761ee94a4288dd707ad81921ab2f06cac0de678e74fdcdd"
+    },
+    "python/flow2api/src/main.py": {
+      "upstream_path": "src/main.py",
+      "sha256": "d6858a53d56603d0f7756a32c5903bca6115af427c51f2b3594e3ac111222a8a"
+    },
+    "python/flow2api/src/services/protocol_login.py": {
+      "upstream_path": "src/services/protocol_login.py",
+      "sha256": "206dae3259cd75f4dc054c587f6c47a857285075cd0a8aaa4b15b051850730b9"
+    },
+    "python/flow2api/src/api/__init__.py": {
+      "upstream_path": "src/api/__init__.py",
+      "sha256": "9dbfbd8abdcb599a60c84266b61c5d1caf98ab54811301feae41892ff2d43bee"
+    },
+    "python/flow2api/src/api/admin.py": {
+      "upstream_path": "src/api/admin.py",
+      "sha256": "d8bd79378de617c7b05625c380860c58a5a5ef11fd6210cbfbc515b51f9b0e8a"
+    },
+    "python/flow2api/src/api/routes.py": {
+      "upstream_path": "src/api/routes.py",
+      "sha256": "3751a94b3dc7a5ca12c2c4aa7e803a3398d02d57a306a55cb81f644d4aaec375"
+    },
+    "python/flow2api/src/core/__init__.py": {
+      "upstream_path": "src/core/__init__.py",
+      "sha256": "6dfc409fbaf9c16d8660921d5d1aee6115c0d4295bad3dd80aa54fe03e93a64a"
+    },
+    "python/flow2api/src/core/account_tiers.py": {
+      "upstream_path": "src/core/account_tiers.py",
+      "sha256": "735c8b1a1137c648637943f3a7a170e5b74c075036bf0fe2a41c6e94745f6e9a"
+    },
+    "python/flow2api/src/core/auth.py": {
+      "upstream_path": "src/core/auth.py",
+      "sha256": "81f4734bac910eb7e3dc1d0bf6bff075c11ea9e5918d0d2706eaa15cb7b3ed97"
+    },
+    "python/flow2api/src/core/browser_runtime_status.py": {
+      "upstream_path": "src/core/browser_runtime_status.py",
+      "sha256": "3f8ae88e51d97661828ce285d229084729416a9270c0dc1f3dd2dd78303cfad8"
+    },
+    "python/flow2api/src/core/config.py": {
+      "upstream_path": "src/core/config.py",
+      "sha256": "ff6b286774d59bf8d83e7fa9673c638af35162f54b1b2e6d41cd3d6fdce91c1f"
+    },
+    "python/flow2api/src/core/database.py": {
+      "upstream_path": "src/core/database.py",
+      "sha256": "81c52bcc57f14f04c5e2b6aa310cd921388727f628c69133b873db1e0f105d3f"
+    },
+    "python/flow2api/src/core/logger.py": {
+      "upstream_path": "src/core/logger.py",
+      "sha256": "ec35d87c5f0dd5230f92d55aeb87ae45e9d658e73c0affb6a3efadca2eee764e"
+    },
+    "python/flow2api/src/core/models.py": {
+      "upstream_path": "src/core/models.py",
+      "sha256": "18000d7fbe23939f948a37bce805c3dd69b09cfb7f07a22805111a6a56f5bae6"
+    },
+    "python/flow2api/src/core/monitoring.py": {
+      "upstream_path": "src/core/monitoring.py",
+      "sha256": "fa050cbfea1b1ac6b8149468f8e18b86024e4fb3739a938d82f3b30f070527fc"
+    },
+    "python/flow2api/src/services/__init__.py": {
+      "upstream_path": "src/services/__init__.py",
+      "sha256": "4a211d7e91bc79ec0d7957068a4a02b26d0475666aea12f991b6cec012f6253a"
+    },
+    "python/flow2api/src/services/browser_captcha.py": {
+      "upstream_path": "src/services/browser_captcha.py",
+      "sha256": "66da9dbf7172f793b64cd3e76812046121b1d65ed338af7d4dac9453b4f1484a"
+    },
+    "python/flow2api/src/services/browser_captcha_extension.py": {
+      "upstream_path": "src/services/browser_captcha_extension.py",
+      "sha256": "5f96c7fa8568f02cb5c99e691e506129ec4521b3f1bbad752617e5aa831ed6f2"
+    },
+    "python/flow2api/src/services/browser_cookie_utils.py": {
+      "upstream_path": "src/services/browser_cookie_utils.py",
+      "sha256": "80cf5739b070c81045430937aeac6cfcf3100602185e60c6b28d742e12d8db16"
+    },
+    "python/flow2api/src/services/concurrency_manager.py": {
+      "upstream_path": "src/services/concurrency_manager.py",
+      "sha256": "c457c30fea2bf99a62b3ee75172f32a42af41b79eeb2f22cd55662a7264bbb76"
+    },
+    "python/flow2api/src/services/file_cache.py": {
+      "upstream_path": "src/services/file_cache.py",
+      "sha256": "07e246db2b7ab7bfe9a17ed9d549d18366af7ada998ba5faffaadb4a2f5a96fc"
+    },
+    "python/flow2api/src/services/generation_handler.py": {
+      "upstream_path": "src/services/generation_handler.py",
+      "sha256": "63c8ab014403bb549ed09ea9d3a89d52d452da04fc75f96bdddb06fdac71e291"
+    },
+    "python/flow2api/src/services/proxy_manager.py": {
+      "upstream_path": "src/services/proxy_manager.py",
+      "sha256": "c53047dcfa869e960eb72e47a9bde05867ddfb0cec5fa24de23a2771596fb741"
+    },
+    "python/flow2api/src/services/twocaptcha.py": {
+      "upstream_path": "src/services/twocaptcha.py",
+      "sha256": "92a8767aaa57690c157ad54a61ea85348dc1312409e6780c0cd17308168e0e61"
+    }
+  },
+  "plugin_adapters": [
+    "python/model_adapter.py",
+    "python/worker.py",
+    "python/generation_lifecycle.py",
+    "python/extension_sync.py",
+    "python/media_response.py"
+  ],
+  "retained_local_integration": [
+    {
+      "file": "python/flow2api/src/services/token_manager.py",
+      "reason": "GFlow extension validated-session reuse; prevent healthy account deactivation on transient failures; local frontend-expiry margin"
+    },
+    {
+      "file": "python/flow2api/src/services/load_balancer.py",
+      "reason": "GFlow empty/disabled/session-expired account messages"
+    },
+    {
+      "file": "python/flow2api/src/services/browser_captcha_personal.py",
+      "reason": "Existing plugin browser lifetime and login-storage integration retained; not changed by this sync"
+    },
+    {
+      "file": "python/flow2api/src/services/recaptcha_runtime.py",
+      "reason": "Existing verification runtime retained; not changed by this sync"
+    }
+  ],
+  "runtime_generation_verification": "Not implied by upstream synchronization or mock/cloud tests"
+}

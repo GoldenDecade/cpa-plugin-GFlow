@@ -12,19 +12,23 @@ sys.path.insert(0,str(ROOT / "python/flow2api"))
 from src.services.flow_client import FlowClient
 
 class BrowserContextTest(unittest.IsolatedAsyncioTestCase):
-    async def test_credit_rpc_reuses_browser_session_instead_of_anonymous_bootstrap(self):
+    async def test_credit_rpc_loads_upstream_bootstrap_instead_of_plugin_page_context(self):
         client=FlowClient(None)
         client._set_request_fingerprint({"gflow_frontend":{
-            "bl":"boq_labs-ai-sandbox-frontend_20261014.00_p0","sid":"123456",
-            "at":"fake-xsrf:token", "source_path":"/project/11111111-1111-1111-1111-111111111111"}})
-        client._load_flow_frontend_bootstrap=AsyncMock(side_effect=AssertionError("不能替换为匿名页面"))
+            "bl":"boq_labs-ai-sandbox-frontend_ignored","sid":"111",
+            "at":"ignored-token", "source_path":"/projects"}})
+        bootstrap=json.dumps({
+            "bl":"boq_labs-ai-sandbox-frontend_upstream",
+            "FdrFJe":"222", "SNlM0e":"fake-xsrf:upstream",
+        })
+        client._load_flow_frontend_bootstrap=AsyncMock(return_value=bootstrap)
         client._make_text_request=AsyncMock(return_value=json.dumps([["wrb.fr","nzlxg",json.dumps([12])]]))
         result=await client.get_credits(google_cookies="SID=fake; OSID=synthetic")
-        self.assertEqual(result["credits"],12)
-        client._load_flow_frontend_bootstrap.assert_not_awaited()
+        self.assertEqual(result['credits'],12)
+        client._load_flow_frontend_bootstrap.assert_awaited_once()
         request=client._make_text_request.call_args.kwargs
-        self.assertEqual(parse_qs(request["raw_body"])["at"],["fake-xsrf:token"])
-        self.assertEqual(parse_qs(urlparse(request["url"]).query)["f.sid"],["123456"])
+        self.assertEqual(parse_qs(request["raw_body"])["at"],["fake-xsrf:upstream"])
+        self.assertEqual(parse_qs(urlparse(request["url"]).query)["f.sid"],["222"])
         self.assertEqual(request["headers"]["Cookie"],"SID=fake; OSID=synthetic")
 
     async def test_content_script_binds_account_and_does_not_return_credentials_on_mismatch(self):

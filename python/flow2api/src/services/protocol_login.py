@@ -132,7 +132,6 @@ class ProtocolLogin:
         google_cookies_raw: str,
         proxy: Optional[str] = None,
         email: Optional[str] = None,
-        user_agent: Optional[str] = None,
     ) -> Dict[str, Any]:
         try:
             validate_flow_cookie_storage(google_cookies_raw)
@@ -162,7 +161,6 @@ class ProtocolLogin:
                     f"{FLOW_BASE}/projects",
                     headers={
                         "Referer": f"{FLOW_BASE}/",
-                        **({"User-Agent": user_agent} if user_agent else {}),
                     },
                 )
                 # The Python session jar only merges updates; a fresh snapshot also

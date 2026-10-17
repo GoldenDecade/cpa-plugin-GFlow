@@ -13,13 +13,6 @@ from ..core.logger import debug_logger
 from .browser_cookie_utils import serialize_cookie_header_for_url
 
 
-class FlowBootstrapError(RuntimeError):
-    """登录握手的公开诊断仅包含阶段、状态码和固定原因。"""
-    def __init__(self, message, *, status, reason):
-        super().__init__(message)
-        self.gflow_diagnostic = {"phase": "bootstrap", "http_status": status, "reason": reason}
-
-
 class FlowFrontendMixin:
     """Frontend RPC helpers shared by project and media generation flows."""
 
@@ -50,10 +43,6 @@ class FlowFrontendMixin:
                 if token
                 else ""
             )
-        if cookie_storage:
-            # RPC 和浏览器必须使用同一份站点作用域，旧版镜像会产生重复登录 Cookie。
-            from .personal_cookie_policy import scoped_personal_cookies
-            cookie_storage = json.dumps(scoped_personal_cookies(cookie_storage), separators=(",", ":"))
         return cookie_storage
 
     @staticmethod
@@ -663,11 +652,9 @@ class FlowFrontendMixin:
         if response.status_code in {401, 403} or (
             response_host and response_host != "flow.google.com"
         ):
-            raise FlowBootstrapError(
+            raise RuntimeError(
                 "Flow 登录认证失败：Google Cookie 已失效、不完整，或登录态被重定向 "
-                f"(code={response.status_code})",
-                status=response.status_code,
-                reason="redirect" if response_host and response_host != "flow.google.com" else "http_auth",
+                f"(code={response.status_code})"
             )
         if response.status_code >= 400:
             raise RuntimeError(
@@ -685,10 +672,8 @@ class FlowFrontendMixin:
         source_path: Optional[str] = None,
         cookie_storage: Optional[str] = None,
     ) -> Any:
-        browser_frontend = (self.get_request_fingerprint() or {}).get("gflow_frontend")
         resolved_source_path = source_path or (
-            f"/project/{project_id}" if project_id else
-            browser_frontend["source_path"] if isinstance(browser_frontend, dict) else "/projects"
+            f"/project/{project_id}" if project_id else "/projects"
         )
         page_url = f"https://flow.google.com{resolved_source_path}"
         bootstrap_cookie_header = (
@@ -698,15 +683,11 @@ class FlowFrontendMixin:
         )
         if not bootstrap_cookie_header:
             raise RuntimeError("Flow frontend RPC requires Google session cookies")
-        if isinstance(browser_frontend, dict):
-            # 页面读取已由扩展核对账号；避免用匿名页面的新 f.sid 覆盖已登录上下文。
-            bootstrap_text = json.dumps({"bl":browser_frontend["bl"], "FdrFJe":browser_frontend["sid"], "SNlM0e":browser_frontend["at"]}, separators=(",", ":"))
-        else:
-            bootstrap_text = await self._load_flow_frontend_bootstrap(
-                page_url,
-                bootstrap_cookie_header,
-                timeout,
-            )
+        bootstrap_text = await self._load_flow_frontend_bootstrap(
+            page_url,
+            bootstrap_cookie_header,
+            timeout,
+        )
         bootloader_match = re.search(
             r"boq_labs-ai-sandbox-frontend_[A-Za-z0-9_.-]+",
             bootstrap_text,
@@ -779,22 +760,7 @@ class FlowFrontendMixin:
             )
 
         frames = self._parse_batchexecute_frames(response_text)
-        try:
-            self._raise_batchexecute_error(frames, rpc_id)
-        except RuntimeError as error:
-            from .protocol_login import extract_flow_account_email
-            names = [part.strip().split("=", 1)[0] for part in rpc_cookie_header.split(";") if "=" in part]
-            observed_email = extract_flow_account_email(bootstrap_text)
-            fingerprint = self.get_request_fingerprint() or {}
-            expected_email = str(fingerprint.get("gflow_account_email") or "").casefold()
-            error.gflow_diagnostic = {
-                "phase": "rpc", "bootstrap_identity": bool(observed_email) if not browser_frontend else True,
-                "xsrf_present": bool(at_token), "rpc_cookie_count": len(names),
-                "duplicate_cookie_names": len(names) - len(set(names)),
-                **({"account_matches": observed_email.casefold() == expected_email}
-                   if observed_email and expected_email else {}),
-            }
-            raise
+        self._raise_batchexecute_error(frames, rpc_id)
         payload = self._extract_batchexecute_payload(frames, rpc_id)
         if payload is None:
             raise RuntimeError(f"Flow frontend RPC returned no payload: rpc={rpc_id}")

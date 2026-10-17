@@ -34,18 +34,15 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Test task lifecycle and cookie scope
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Test upstream integration and task lifecycle
         run: |
-          python -m pip install "psutil>=5.9,<8"
+          python -m pip install "psutil>=5.9,<8" "pillow>=10,<13" "send2trash>=1.8,<3"
           python -m pip install -r python/flow2api/requirements.txt
-          python -B -m unittest discover -s tests -p test_http_transport.py -v
-          python -B -m unittest discover -s tests -p test_worker_accounts.py -v
-          python -B -m unittest discover -s tests -p test_transport_cookies.py -v
-          python -B -m unittest discover -s tests -p test_generation_lifecycle.py -v
-          python -B -m unittest discover -s tests -p test_generation_errors.py -v
-          python -B -m unittest discover -s tests -p test_personal_cookie_targets.py -v
-          python -B -m unittest discover -s tests -p test_recaptcha_bootstrap.py -v
-          python -B -m unittest discover -s tests -p test_media_response.py -v
+          python -B -m unittest discover -s tests -p 'test_*.py' -v
+          PYTHONPATH=python/flow2api python -B -m unittest discover -s tests/upstream -p 'test_*.py' -v
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}

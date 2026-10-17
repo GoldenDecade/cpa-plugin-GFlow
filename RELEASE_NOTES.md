@@ -1,3 +1,12 @@
+# 0.1.6
+
+- 固定引用 TheSmallHanCat/flow2api 提交 60e673b05fe2630189f49e6dd3b275c2c8599158，27 个 Python 模块与上游一致，来源及哈希记录于 python/flow2api/upstream.json。
+- HTTP、RPC、图片/视频调用和基础模型解析直接采用原版；移除 GFlow 自定义 TLS 重连及 RPC 页面上下文替换。
+- 七个 GFlow 展示模型与画质、比例、秒数、参考图映射移至 python/model_adapter.py，保留 EasyCPA 接入和账号管理。
+- 保留任务停止、客户端退出回收、任务总超时及现有浏览器生命周期集成。
+- 引入上游视频回归测试；仅模型不存在的短时长 Veo key 按原版回退为相同秒数标准 key，不对风控/权限/网络错误换模型重发。
+- 编译和测试在 GitHub Actions 执行；本地不编译。本次源码同步不代表 Google 实际生成已恢复，不增加自动收费验证。
+
 # 0.1.2
 
 - 合并刷新后 Flow 与 .google.com 中同值同名的冗余登录 Cookie，修复 CookieMismatch；不同值保留原作用域。

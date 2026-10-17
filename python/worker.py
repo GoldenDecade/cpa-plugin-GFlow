@@ -174,7 +174,7 @@ class GFlowService:
             "active_tokens": len(active),
             "total_credits": total_credits,
             "extension_sync": getattr(self, "last_extension_sync", None),
-            "sync_revision": "20261016.9",
+            "sync_revision": "20261017.1",
         }
 
     async def handle_list_tokens(self, _params: Dict[str, Any]) -> Dict[str, Any]:
@@ -248,7 +248,6 @@ class GFlowService:
         proxy = await self.proxy_manager.get_request_proxy_url()
         return await protocol_loginer.login(
             cookies, proxy=proxy, email=email,
-            user_agent=self.flow_client._get_effective_request_user_agent(),
         )
 
     async def handle_extension_sync(self, params: Dict[str, Any]) -> Dict[str, Any]:
@@ -339,6 +338,8 @@ class GFlowService:
 
     async def handle_chat_completion(self, req_id: str, params: Dict[str, Any]):
         await self.initialize()
+        from model_adapter import normalize_model_alias, resolve_model_name
+        from src.services.generation_handler import MODEL_CONFIG
         from src.api.routes import (
             ChatCompletionRequest,
             _normalize_openai_request,
@@ -354,7 +355,7 @@ class GFlowService:
             actual_model = model_raw
 
         params_clean = dict(params)
-        params_clean["model"] = actual_model
+        params_clean["model"] = normalize_model_alias(actual_model)
 
         active_tokens = await self.token_manager.get_active_tokens()
         if not active_tokens:
@@ -371,6 +372,10 @@ class GFlowService:
         try:
             req_obj = ChatCompletionRequest(**params_clean)
             normalized = await _normalize_openai_request(req_obj)
+            normalized.model = resolve_model_name(
+                actual_model, request=req_obj, model_config=MODEL_CONFIG,
+                images=normalized.images,
+            )
 
             if is_stream:
                 async for chunk in _iterate_openai_stream(normalized, base_url_override):

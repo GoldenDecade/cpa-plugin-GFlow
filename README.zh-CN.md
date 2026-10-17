@@ -77,3 +77,10 @@ GFlow 与浏览器扩展本身免费。Google Flow 订阅和生成积分、付�
 ## 来源
 
 GFlow 内嵌的模型适配代码参考 [TheSmallHanCat/flow2api](https://github.com/TheSmallHanCat/flow2api)，保留其 MIT 声明。GFlow 登录助手独立实现，未复制未声明许可证的第三方浏览器扩展源码。
+
+
+## Flow2API 源码版本
+
+GFlow 0.1.6 直接采用 [TheSmallHanCat/flow2api](https://github.com/TheSmallHanCat/flow2api) 提交 60e673b05fe2630189f49e6dd3b275c2c8599158 的请求、RPC、图片/视频调用与模型解析。python/flow2api/upstream.json 记录 27 个原版模块和对应哈希；保留上游 MIT 许可证。GFlow 的模型别名、参数选择和宿主生命周期位于插件适配层，账号管理及浏览器生命周期的既有集成差异单独列入清单。
+
+云端回归测试不访问真实 Google 生成接口；源码一致、连接成功、余额可查分别对应不同验证范围，均不保证生成请求会被 Google 接受。

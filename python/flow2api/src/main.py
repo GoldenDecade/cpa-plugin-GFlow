@@ -174,12 +174,10 @@ async def lifespan(app: FastAPI):
             print("Browser captcha resident warmup skipped for this startup")
         elif tokens:
             print("Browser captcha resident warmup skipped: no tab warmed successfully")
-        elif os.environ.get("FLOW2API_AUTO_OPEN_LOGIN_WINDOW", "0") == "1":
-            # 仅在显式开启 FLOW2API_AUTO_OPEN_LOGIN_WINDOW=1 时自动打开登录窗口
+        else:
+            # 没有任何可用 token 时，打开登录窗口供用户手动操作
             await browser_service.open_login_window()
             print("No active token found, opened login window for manual setup")
-        else:
-            print("No active token found; auto login window suppressed")
     elif captcha_config.captcha_method == "browser":
         from .services.browser_captcha import BrowserCaptchaService
 

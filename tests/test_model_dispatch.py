@@ -17,7 +17,7 @@ sys.path.insert(0, str(root_dir / "python"))
 sys.path.insert(0, str(flow_dir))
 
 from worker import get_gflow_model_catalog
-from src.core.model_resolver import resolve_model_name, normalize_model_alias
+from model_adapter import resolve_model_name, normalize_model_alias
 from src.services.generation_handler import MODEL_CONFIG
 
 

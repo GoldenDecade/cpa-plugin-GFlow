@@ -102,8 +102,8 @@ class ExtensionSyncTest(IsolatedAsyncioTestCase):
         self.assertEqual(client._set_request_fingerprint.call_args.args[0], {"accept_language":"zh-CN"})
 
     async def test_bootstrap_diagnostics_never_return_raw_response(self):
-        from src.services.flow_frontend import FlowBootstrapError
-        error = FlowBootstrapError("Flow 登录认证失败: Cookie=DO_NOT_ECHO", status=200, reason="redirect")
+        error = RuntimeError("Flow 登录认证失败: Cookie=DO_NOT_ECHO")
+        error.gflow_diagnostic = {"phase":"bootstrap", "http_status":200, "reason":"redirect"}
         result = classify_sync_failure(error).result()
         self.assertEqual(result["error"]["diagnostic"], {"phase":"bootstrap", "http_status":200,"reason":"redirect"})
         self.assertNotIn("DO_NOT_ECHO", str(result))
