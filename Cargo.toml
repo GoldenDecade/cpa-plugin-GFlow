@@ -1,10 +1,10 @@
 [package]
 name = "cpa-plugin-gflow"
-version = "0.1.11"
+version = "0.1.12"
 edition = "2021"
 authors = ["daodeqing"]
 license = "MIT"
-description = "Google Flow (Veo & Nano Banana) model and account pool plugin for EasyCLIProxyAPI"
+description = "Google Flow media generation, fixed project binding and account pool plugin for EasyCLIProxyAPI"
 repository = "https://github.com/daodeqing/cpa-plugin-GFlow"
 
 [lib]

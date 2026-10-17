@@ -134,7 +134,7 @@ fn handle_register(req: &[u8]) -> Result<Vec<u8>, String> {
                 "Name": "GFlow",
                 "Version": env!("CARGO_PKG_VERSION"),
                 "Author": "daodeqing",
-                "Description": "Google Flow (Veo & Nano Banana) 模型接入与多账号池管理插件",
+                "Description": "Google Flow 图片/视频生成、固定项目绑定与多账号池管理插件",
                 "GitHubRepository": "https://github.com/daodeqing/cpa-plugin-GFlow",
                 "Logo": "https://raw.githubusercontent.com/daodeqing/cpa-plugin-GFlow/main/assets/logo.png",
                 "Homepage": "https://github.com/daodeqing/cpa-plugin-GFlow",
@@ -213,6 +213,7 @@ fn handle_model_static(_req: &[u8]) -> Result<Vec<u8>, String> {
         }
     }
 
+    models_list.push(project_control_model());
     let out = serde_json::json!({
         "ok": true,
         "result": {
@@ -275,25 +276,50 @@ fn handle_count_tokens() -> Result<Vec<u8>, String> {
     serde_json::to_vec(&out).map_err(|e| e.to_string())
 }
 
+const PROJECT_CONTROL_MODEL: &str = "gflow-project-control";
+
+fn project_control_model() -> serde_json::Value {
+    serde_json::json!({
+        "ID": PROJECT_CONTROL_MODEL, "Object": "model", "OwnedBy": "gflow",
+        "DisplayName": "GFlow Project Control (no media generation)",
+        "SupportedGenerationMethods": ["chat"], "ContextLength": 8192,
+        "UserDefined": true
+    })
+}
+
+// 宿主格式适配可能只保留标准字段，项目绑定必须从原请求完整保留。
+fn executor_body(request: &serde_json::Value) -> Result<serde_json::Value, String> {
+    use base64::Engine;
+    let decode = |field: &str| -> serde_json::Value {
+        request.get(field).and_then(|v| v.as_str())
+            .and_then(|v| base64::engine::general_purpose::STANDARD.decode(v).ok())
+            .and_then(|v| serde_json::from_slice(&v).ok())
+            .unwrap_or_else(|| serde_json::json!({}))
+    };
+    let original = decode("OriginalRequest");
+    let mut body = if request.get("Payload").and_then(|v| v.as_str()).is_some() {
+        decode("Payload")
+    } else { original.clone() };
+    if !body.is_object() { return Err("Invalid executor request object".into()); }
+    for field in ["gflow_workspace_id", "gflow_project_id", "gflow_instance_id"] {
+        if let Some(value) = original.get(field) {
+            if body.get(field).is_some_and(|existing| existing != value) {
+                return Err("Conflicting GFlow project binding fields".into());
+            }
+            body[field] = value.clone();
+        }
+    }
+    if let Some(model) = request.get("Model").and_then(|v| v.as_str()).filter(|v| !v.is_empty()) {
+        body["model"] = serde_json::json!(model);
+    }
+    Ok(body)
+}
+
 fn handle_executor_execute(req: &[u8]) -> Result<Vec<u8>, String> {
     use base64::Engine;
     let req_val: serde_json::Value = serde_json::from_slice(req).map_err(|e| e.to_string())?;
 
-    // Extract request body (Payload or OriginalRequest)
-    let body_bytes = if let Some(p) = req_val.get("Payload").and_then(|s| s.as_str()) {
-        base64::engine::general_purpose::STANDARD.decode(p).unwrap_or_default()
-    } else if let Some(orig) = req_val.get("OriginalRequest").and_then(|s| s.as_str()) {
-        base64::engine::general_purpose::STANDARD.decode(orig).unwrap_or_default()
-    } else {
-        Vec::new()
-    };
-
-    let mut body_json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap_or_else(|_| serde_json::json!({}));
-    if let Some(m) = req_val.get("Model").and_then(|s| s.as_str()) {
-        if !m.is_empty() {
-            body_json["model"] = serde_json::Value::String(m.to_string());
-        }
-    }
+    let body_json = executor_body(&req_val)?;
 
     let worker_res = get_worker().execute("chat_completion", body_json)?;
     let res_bytes = serde_json::to_vec(&worker_res).map_err(|e| e.to_string())?;
@@ -316,20 +342,7 @@ fn handle_executor_stream(req: &[u8]) -> Result<Vec<u8>, String> {
     let req_val: serde_json::Value = serde_json::from_slice(req).map_err(|e| e.to_string())?;
 
     let stream_id = req_val.get("stream_id").and_then(|s| s.as_str()).unwrap_or("");
-    let body_bytes = if let Some(p) = req_val.get("Payload").and_then(|s| s.as_str()) {
-        base64::engine::general_purpose::STANDARD.decode(p).unwrap_or_default()
-    } else if let Some(orig) = req_val.get("OriginalRequest").and_then(|s| s.as_str()) {
-        base64::engine::general_purpose::STANDARD.decode(orig).unwrap_or_default()
-    } else {
-        Vec::new()
-    };
-
-    let mut body_json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap_or_else(|_| serde_json::json!({}));
-    if let Some(m) = req_val.get("Model").and_then(|s| s.as_str()) {
-        if !m.is_empty() {
-            body_json["model"] = serde_json::Value::String(m.to_string());
-        }
-    }
+    let mut body_json = executor_body(&req_val)?;
     body_json["stream"] = serde_json::Value::Bool(true);
 
     if !stream_id.is_empty() {
@@ -612,5 +625,57 @@ mod cached_media_regressions {
         assert!(cached_media_name("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.mp4").is_some());
         assert!(cached_media_name("../aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.jpg").is_none());
         assert!(cached_media_name("control-00000000-0000-0000-0000-000000000001-0.json").is_none());
+    }
+}
+
+
+#[cfg(test)]
+mod project_control_contract {
+    use super::*;
+    use base64::Engine;
+
+    fn encoded(value: serde_json::Value) -> String {
+        base64::engine::general_purpose::STANDARD.encode(serde_json::to_vec(&value).unwrap())
+    }
+
+    #[test]
+    fn control_model_routes_without_management_registration() {
+        let route = handle_model_route(br#"{"RequestedModel":"gflow-project-control"}"#).unwrap();
+        let result: serde_json::Value = serde_json::from_slice(&route).unwrap();
+        assert_eq!(result["result"]["Handled"], true);
+        assert_eq!(project_control_model()["ID"], PROJECT_CONTROL_MODEL);
+        assert_eq!(project_control_model()["SupportedGenerationMethods"], serde_json::json!(["chat"]));
+    }
+
+    #[test]
+    fn project_binding_survives_host_normalization() {
+        let request = serde_json::json!({
+            "Payload": encoded(serde_json::json!({"model":"old","messages":[]})),
+            "OriginalRequest": encoded(serde_json::json!({
+                "gflow_workspace_id":"workspace", "gflow_project_id":"flow",
+                "gflow_instance_id":"instance"
+            })), "Model":"gflow-nano-banana-2-lite"
+        });
+        let body = executor_body(&request).unwrap();
+        assert_eq!(body["gflow_project_id"], "flow");
+        assert_eq!(body["gflow_workspace_id"], "workspace");
+        assert_eq!(body["gflow_instance_id"], "instance");
+        assert_eq!(body["model"], "gflow-nano-banana-2-lite");
+    }
+
+    #[test]
+    fn conflicting_binding_is_rejected_before_worker() {
+        let request = serde_json::json!({
+            "Payload": encoded(serde_json::json!({"gflow_project_id":"wrong"})),
+            "OriginalRequest": encoded(serde_json::json!({"gflow_project_id":"expected"}))
+        });
+        assert!(executor_body(&request).is_err());
+    }
+
+    #[test]
+    fn control_standard_message_is_forwarded_unchanged() {
+        let body = serde_json::json!({"model":PROJECT_CONTROL_MODEL,"stream":false,
+            "messages":[{"role":"user","content":"{\"version\":1,\"op\":\"capabilities\"}"}]});
+        assert_eq!(executor_body(&serde_json::json!({"OriginalRequest":encoded(body.clone())})).unwrap(), body);
     }
 }

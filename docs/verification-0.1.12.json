@@ -1,0 +1,73 @@
+{
+  "version": "0.1.12",
+  "date": "2026-10-18",
+  "python": {
+    "total": 136,
+    "passed": 127,
+    "skipped": 9,
+    "failed": 0,
+    "skippedReason": "Native bootstrap suite requires a frozen-worker DLL; not built locally."
+  },
+  "projectControlTests": {
+    "passed": 33,
+    "failed": 0
+  },
+  "upstreamPython": {
+    "total": 29,
+    "passed": 29,
+    "failed": 0
+  },
+  "rust": {
+    "total": 14,
+    "passed": 14,
+    "failed": 0
+  },
+  "workerProcessSmoke": {
+    "capabilities": "passed with synthetic empty database",
+    "projects.list": "passed with synthetic empty database"
+  },
+  "upstreamPinnedSources": "28 pinned files unchanged (27 source modules and 1 upstream test)",
+  "unverified": [
+    "Actual EasyCPA host routing and API Key middleware",
+    "Self-contained frozen-worker installation smoke; CI extended to cover it",
+    "Real Google Flow project creation",
+    "Real Google image/video generation"
+  ],
+  "cleanup": {
+    "method": "Windows Recycle Bin",
+    "entries": [
+      {
+        "path": ".build",
+        "bytes": 210316000,
+        "fileCount": 1869,
+        "status": "recycled"
+      },
+      {
+        "path": "logs.txt",
+        "bytes": 0,
+        "fileCount": 1,
+        "status": "recycled"
+      },
+      {
+        "path": "data",
+        "bytes": 0,
+        "fileCount": 0,
+        "status": "recycled"
+      },
+      {
+        "path": "python/flow2api/tmp",
+        "bytes": 0,
+        "fileCount": 0,
+        "status": "recycled"
+      }
+    ],
+    "totalBytes": 210316000
+  },
+  "followup": {
+    "postRefreshPermissions": "identity, id, active, media flags and tier rechecked",
+    "concurrency": "bound requests always run nonblocking account busy precheck; no additional reservation",
+    "credits": "actual Google platform response remains authoritative; errors never switch accounts",
+    "cleanupPending": ".build restored test dependencies and generated followup fixtures await root final cleanup",
+    "structuredErrors": "Control validation/conflict/cancellation remain standard completion JSON errors; ABI unchanged"
+  }
+}

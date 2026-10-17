@@ -1,6 +1,7 @@
 import asyncio
 import sys
 import traceback
+from project_control import ProjectControlError, error_completion
 
 
 class ManagementDispatcher:
@@ -19,20 +20,29 @@ class ManagementDispatcher:
             handler = getattr(self.service, "handle_" + command, None)
             if handler is None:
                 raise ValueError("Unknown command: " + command)
-            if command in {"ping", "status", "list_tokens", "list_models", "get_config"}:
+            if command in {"ping", "status", "list_tokens", "list_models", "get_config", "project_control"}:
                 result = await handler(params)
             else:
                 async with self.mutations:
                     result = await handler(params)
             self.service.send_line({"id": request_id, "done": True, "result": result})
         except asyncio.CancelledError:
-            self.service.send_line({
-                "id": request_id, "done": True,
-                "error": {"code": "worker_stopped", "message": "GFlow backend stopped; operation result may be unknown", "status_code": 503},
-            })
+            error = {"code": "worker_stopped", "message": "GFlow backend stopped; operation result may be unknown", "status_code": 503}
+            if command == "project_control":
+                self.service.send_line({"id": request_id, "done": True, "result": error_completion(ProjectControlError(
+                    "worker_stopped", "项目操作被中断，结果需要核查；不会自动重建项目", 503))})
+            else:
+                self.service.send_line({"id": request_id, "done": True, "error": error})
+        except ProjectControlError as error:
+            field, value = ("result", error_completion(error)) if command == "project_control" else ("error", error.payload())
+            self.service.send_line({"id": request_id, "done": True, field: value})
         except Exception as error:
-            sys.stderr.write(f"[GFlowService] Error in {command}: {traceback.format_exc()}\n")
-            self.service.send_line({"id": request_id, "done": True, "error": {"message": str(error)}})
+            if command == "project_control":
+                self.service.send_line({"id": request_id, "done": True, "result": error_completion(ProjectControlError(
+                    "project_control_unavailable", "项目服务暂不可用，请检查插件日志", 503))})
+            else:
+                sys.stderr.write(f"[GFlowService] Error in {command}: {traceback.format_exc()}\n")
+                self.service.send_line({"id": request_id, "done": True, "error": {"message": str(error)}})
 
     async def shutdown(self):
         pending = list(self.tasks)

@@ -104,6 +104,18 @@ class BootstrapTest(unittest.TestCase):
         for invalid in ("../flow.db", "control-secret.json", "../" + filename):
             self.assertEqual(self.request("/v0/management/plugins/gflow/api/media", query={"file": [invalid]})["StatusCode"], 404)
 
+    def test_control_executor_uses_standard_messages_without_management_key(self):
+        body = {"model": "gflow-project-control", "stream": False, "messages": [{
+            "role": "user", "content": json.dumps({"version": 1, "op": "capabilities",
+                "workspaceId": "11111111-1111-4111-8111-111111111111"})}]}
+        receipt = self.rpc("executor.execute", {"Model": "gflow-project-control",
+            "Payload": base64.b64encode(json.dumps(body).encode()).decode()})["result"]
+        payload = json.loads(base64.b64decode(receipt["Payload"]))
+        control = json.loads(payload["choices"][0]["message"]["content"])
+        self.assertTrue(control["projectBinding"])
+        self.assertEqual(len(control["models"]), 7)
+        self.assertNotIn("synthetic-management-key", json.dumps(control))
+
     def test_management_method_is_checked_before_starting_backend(self):
         self.assertEqual(self.request("/v0/management/plugins/gflow/api/status", "POST")["StatusCode"], 405)
         self.assertEqual(self.request("/v0/management/plugins/gflow/api/config/delete")["StatusCode"], 404)

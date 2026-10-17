@@ -17,6 +17,7 @@ os.environ.setdefault("PERSONAL_BROWSER_HEADLESS", "1")
 os.environ.setdefault("PYTHONDONTWRITEBYTECODE", "1")
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+from project_control import ProjectControlError
 
 # Reconfigure standard streams to UTF-8
 if hasattr(sys.stdout, "reconfigure"):
@@ -88,6 +89,7 @@ class GFlowService:
         self.concurrency_manager = None
         self.load_balancer = None
         self.generation_handler = None
+        self.project_control = None
         self.initialized = False
         self.initialization_lock = asyncio.Lock()
         self.account_validation_failures = {}
@@ -127,13 +129,16 @@ class GFlowService:
         self.proxy_manager = ProxyManager(self.db)
         self.flow_client = FlowClient(self.proxy_manager, self.db)
         # 保留 flow2api 自身的分步骤超时；整项任务由 GenerationManager 截止和取消。
-        self.token_manager = TokenManager(self.db, self.flow_client)
+        from project_control import ProjectControl, PoolDatabase, BoundTokenManager, BoundLoadBalancer
+        self.project_control = ProjectControl(self)
+        await self.project_control.initialize()
+        self.token_manager = TokenManager(PoolDatabase(self.db), self.flow_client)
         self.concurrency_manager = ConcurrencyManager()
         self.load_balancer = LoadBalancer(self.token_manager, self.concurrency_manager)
         self.generation_handler = GenerationHandler(
             self.flow_client,
-            self.token_manager,
-            self.load_balancer,
+            BoundTokenManager(self.token_manager),
+            BoundLoadBalancer(self.load_balancer, self.token_manager),
             self.db,
             self.concurrency_manager,
             self.proxy_manager,
@@ -371,7 +376,43 @@ class GFlowService:
     async def handle_list_models(self, _params: Dict[str, Any]) -> Dict[str, Any]:
         return {"models": get_gflow_model_catalog()}
 
+    async def handle_project_control(self, params: Dict[str, Any]):
+        from project_control import parse_control_request, completion, error_completion
+        request = None
+        try:
+            request = parse_control_request(params)
+            await self.initialize()
+            return completion(await self.project_control.handle(request))
+        except ProjectControlError as error:
+            return error_completion(error, instance_id=getattr(getattr(self, "project_control", None), "instance_id", ""),
+                                    workspace_id=request.get("workspaceId") if request else None)
+        except Exception:
+            # 不把凭据、数据库路径或上游原始异常带入公开控制响应。
+            return error_completion(ProjectControlError("project_control_unavailable", "项目服务暂不可用，请检查插件日志", 503),
+                                    instance_id=getattr(getattr(self, "project_control", None), "instance_id", ""),
+                                    workspace_id=request.get("workspaceId") if request else None)
+
     async def handle_chat_completion(self, req_id: str, params: Dict[str, Any]):
+        from project_control import CONTROL_MODEL, CURRENT_BINDING, ProjectControlError
+        context = None
+        try:
+            if params.get("model") == CONTROL_MODEL:
+                result = await self.handle_project_control(params)
+                self.send_line({"id": req_id, "done": True, "result": result})
+                return
+            await self.initialize()
+            binding = None
+            if any(field in params for field in ("gflow_workspace_id", "gflow_project_id", "gflow_instance_id")):
+                binding = await self.project_control.binding_from_request(params)
+            context = CURRENT_BINDING.set(binding)
+            await self._handle_chat_completion(req_id, params)
+        except ProjectControlError as error:
+            self.send_line({"id": req_id, "done": True, "error": error.payload()})
+        finally:
+            if context is not None:
+                CURRENT_BINDING.reset(context)
+
+    async def _handle_chat_completion(self, req_id: str, params: Dict[str, Any]):
         await self.initialize()
         from model_adapter import normalize_model_alias, resolve_model_name
         from src.services.generation_handler import MODEL_CONFIG
@@ -454,6 +495,8 @@ class GFlowService:
                     "done": True,
                     "result": payload,
                 })
+        except ProjectControlError:
+            raise
         except Exception as e:
             tb = traceback.format_exc()
             sys.stderr.write(f"[GFlowService] Generation error: {tb}\n")
@@ -508,7 +551,11 @@ async def main():
             break
 
         if cmd == "chat_completion":
-            lifecycle.submit(req_id, params)
+            from project_control import CONTROL_MODEL
+            if params.get("model") == CONTROL_MODEL:
+                dispatcher.submit(req_id, "project_control", params)
+            else:
+                lifecycle.submit(req_id, params)
             continue
 
         dispatcher.submit(req_id, cmd, params)

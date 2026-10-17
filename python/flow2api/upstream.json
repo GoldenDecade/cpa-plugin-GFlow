@@ -120,7 +120,8 @@
     "python/worker.py",
     "python/generation_lifecycle.py",
     "python/extension_sync.py",
-    "python/media_response.py"
+    "python/media_response.py",
+    "python/project_control.py"
   ],
   "retained_local_integration": [
     {

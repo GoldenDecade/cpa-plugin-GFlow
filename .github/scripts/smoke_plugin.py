@@ -68,6 +68,23 @@ def probe(library, expected_version):
         assert runtime.is_file() and runtime.parents[2].samefile(data_directory), str(runtime)
         status, response = request("/v0/management/plugins/gflow/api/models")
         assert status == 200 and len(json.loads(response)["models"]) == 7
+        # 在干净无账号安装中验证项目控制模型，绝不创建云端项目或生成媒体。
+        catalog = rpc("model.static", {})["Models"]
+        assert any(item["ID"] == "gflow-project-control" for item in catalog)
+        workspace = "11111111-1111-4111-8111-111111111111"
+        instance = None
+        for operation in ("capabilities", "projects.list"):
+            body = {"model": "gflow-project-control", "stream": False, "messages": [{
+                "role": "user", "content": json.dumps({"version": 1, "op": operation, "workspaceId": workspace})}]}
+            receipt = rpc("executor.execute", {"Model": "gflow-project-control",
+                "Payload": base64.b64encode(json.dumps(body).encode()).decode()})
+            value = json.loads(base64.b64decode(receipt["Payload"]))
+            control = json.loads(value["choices"][0]["message"]["content"])
+            assert control["version"] == 1 and control["projectBinding"] is True and control["workspaceId"] == workspace
+            if instance is None: instance = control["instanceId"]
+            assert control["instanceId"] == instance
+            if operation == "capabilities": assert len(control["models"]) == 7
+            else: assert control["projects"] == []
         status, response = request("/v0/management/plugins/gflow/api/media", query={"file": ["../flow.db"]})
         assert status == 404
         status, _ = request("/v0/management/plugins/gflow/api/status", method="POST")
