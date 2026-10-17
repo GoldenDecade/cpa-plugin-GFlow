@@ -48,7 +48,8 @@ def main():
         gh(["release", "create", tag, "--repo", repository, "--verify-tag", "--draft",
             "--title", "GFlow " + tag, "--notes-file", ROOT / "RELEASE_NOTES.md"])
     gh(["release", "upload", tag, *archives, checksum_file, "--repo", repository, "--clobber"])
-    release = json.loads(gh(["api", f"repos/{repository}/releases/tags/{tag}"]).stdout)
+    pages = json.loads(gh(["api", "--paginate", "--slurp", f"repos/{repository}/releases?per_page=100"]).stdout)
+    release = next(item for page in pages for item in page if item["tag_name"] == tag)
     published = {asset["name"]: asset for asset in release["assets"]}
     for path in [*archives, checksum_file]:
         asset = published[path.name]
