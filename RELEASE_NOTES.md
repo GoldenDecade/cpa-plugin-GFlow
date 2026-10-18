@@ -1,3 +1,8 @@
+# GFlow v0.1.13
+
+- 固定 CutFlow 项目的生成请求始终使用持久化 `flow_project_id`，即使 Google token 仍保留旧的池项目，也不会回退到旧项目。
+- 增加项目绑定解析与图片 RPC 项目 ID 回归测试；保留 Google `PUBLIC_ERROR_UNUSUAL_ACTIVITY` 原始错误，不自动重复提交付费生成。
+
 # GFlow v0.1.12
 
 - 新增 `gflow-project-control` 协议 v1，通过普通生成 API Key 提供 capabilities、工作区项目列表、创建及查询；无需管理密钥，不触发媒体生成。
