@@ -1,0 +1,61 @@
+{
+  "path": ".build",
+  "bytes": 1323676023,
+  "sizeMiB": 1262.356,
+  "status": "recycled",
+  "entries": [
+    {
+      "name": "cloud-0.1.12",
+      "bytes": 65785845
+    },
+    {
+      "name": "cloud-final-0.1.12",
+      "bytes": 65783461
+    },
+    {
+      "name": "cloud-final-artifact.zip",
+      "bytes": 39010304
+    },
+    {
+      "name": "cpa-host-control-0.1.12",
+      "bytes": 283806656
+    },
+    {
+      "name": "cpa-host-control-0.1.12-final",
+      "bytes": 427201552
+    },
+    {
+      "name": "cpa-host-control-0.1.12-r2",
+      "bytes": 427207825
+    },
+    {
+      "name": "deps",
+      "bytes": 1697364
+    },
+    {
+      "name": "media-tests",
+      "bytes": 0
+    },
+    {
+      "name": "project-control-tests",
+      "bytes": 13123584
+    },
+    {
+      "name": "project-followup-tests.log",
+      "bytes": 5661
+    },
+    {
+      "name": "python-final-tests.log",
+      "bytes": 26668
+    },
+    {
+      "name": "python-followup-tests.log",
+      "bytes": 27103
+    },
+    {
+      "name": "tmp",
+      "bytes": 0
+    }
+  ],
+  "preservedFinalBundle": "dist/windows-amd64"
+}

@@ -2,9 +2,9 @@
   "hostExecutable": "D:\\LUO\\proxyAPI\\EasyCLIProxyAPI-v0.2.96-Windows-amd64\\cpa-core\\cli-proxy-api.exe",
   "hostSha256": "16d04c56e96ae9938d0222f345ccb2dd0a517d9533d47358a114ee77fb032cdd",
   "archive": "gflow_0.1.12_windows_amd64.zip",
-  "archiveSha256": "82f4bc609fc164d4207df913b8ecb35484ab3b78427e3c6d7a72ce9e74a17e6e",
-  "dllSha256": "248eb2452b82d6154e5cd723c0f5076204e16fd8e6419d1025b2d3834eb85aec",
-  "runtimeRoot": "D:\\LUO\\video editing\\cpa-plugin-GFlow\\.build\\cpa-host-control-0.1.12-r2",
+  "archiveSha256": "816dc409d22d5ca9588dfb610a3d03a8586fde38cbc997de8829677f59ca89c3",
+  "dllSha256": "e54bce52ec5157c0247989c68ca4eff1b18e1bce57bcc48e751925b6c838fb93",
+  "runtimeRoot": "D:\\LUO\\video editing\\cpa-plugin-GFlow\\.build\\cpa-host-control-0.1.12-final",
   "checks": {
     "control_model_registered": "passed",
     "ordinary_api_key_required": "passed",
@@ -15,25 +15,30 @@
   },
   "cloudProjectCreation": "not called",
   "mediaGeneration": "not called",
-  "isolatedHostPid": 25192,
+  "isolatedHostPid": 60792,
   "models": [
+    "gflow-nano-banana-2.1",
+    "gflow-omni-1.1-flash",
+    "gflow-veo-3.1-lite",
     "gflow-veo-3.1-fast",
     "gflow-veo-3.1-quality",
     "gflow-project-control",
     "gflow-nano-banana-pro",
-    "gflow-nano-banana-2-lite",
-    "gflow-nano-banana-2.1",
-    "gflow-omni-1.1-flash",
-    "gflow-veo-3.1-lite"
+    "gflow-nano-banana-2-lite"
   ],
   "emptyGoogleAccountCount": 0,
   "cloudProjectRecordCount": 0,
-  "instanceId": "8eec8e51-b468-4e32-bd04-ca59812574f6",
+  "instanceId": "385461aa-7d8b-4945-bd1b-1c512805c7cc",
   "hostStopped": true,
   "existingServicesUnchanged": true,
   "protectedProcessIds": [
     44500,
     53760
   ],
-  "passed": true
+  "passed": true,
+  "cloudBuild": {
+    "headSha": "d8b0e01a0305088aae2b31b6ecb56707b159523a",
+    "runId": 39054893053,
+    "artifactId": 12109331190
+  }
 }

@@ -59,18 +59,20 @@
         "status": "recycled"
       }
     ],
-    "totalBytes": 210316000
+    "totalBytes": 210316000,
+    "finalCleanupReport": "docs/cleanup-final-0.1.12.json",
+    "finalCleanupBytes": 1323676023
   },
   "followup": {
     "postRefreshPermissions": "Every balancer and handler token refresh rechecks request-local kind/model/tier/identity/id/active constraints",
     "concurrency": "bound requests always run nonblocking account busy precheck; no additional reservation",
     "credits": "actual Google platform response remains authoritative; errors never switch accounts",
-    "cleanupPending": "Current .build cloud artifacts, restored dependencies and isolated CPA fixtures await root final cleanup",
+    "cleanupPending": "completed; final temporary .build moved to Recycle Bin; see docs/cleanup-final-0.1.12.json",
     "structuredErrors": "Control validation/conflict/cancellation remain standard completion JSON errors; ABI unchanged"
   },
   "cloudBuild": {
-    "headSha": "e70f0c224422b92fa83d602d83b879779269bcf0",
-    "url": "https://github.com/daodeqing/cpa-plugin-GFlow/actions/runs/39053815126",
+    "headSha": "d8b0e01a0305088aae2b31b6ecb56707b159523a",
+    "url": "https://github.com/daodeqing/cpa-plugin-GFlow/actions/runs/39054893053",
     "conclusion": "success",
     "platforms": [
       "windows/amd64",
@@ -80,10 +82,17 @@
       "darwin/arm64"
     ],
     "nativeBootstrapPassed": 9,
-    "windowsArtifact": "https://github.com/daodeqing/cpa-plugin-GFlow/actions/runs/39053815126/artifacts/12108995592",
-    "windowsArchiveSha256": "82f4bc609fc164d4207df913b8ecb35484ab3b78427e3c6d7a72ce9e74a17e6e",
-    "windowsDllSha256": "248eb2452b82d6154e5cd723c0f5076204e16fd8e6419d1025b2d3834eb85aec",
-    "windowsWorkerSha256": "d568e4b7f7e23cf675dbfd23e037f046b28af6bfc99d2bad4dcd364f864c6629"
+    "windowsArtifact": "https://github.com/daodeqing/cpa-plugin-GFlow/actions/runs/39054893053/artifacts/12109331190",
+    "windowsArchiveSha256": "816dc409d22d5ca9588dfb610a3d03a8586fde38cbc997de8829677f59ca89c3",
+    "windowsDllSha256": "e54bce52ec5157c0247989c68ca4eff1b18e1bce57bcc48e751925b6c838fb93",
+    "workerVerification": {
+      "version": "0.1.12",
+      "platform": "windows/amd64",
+      "worker_sha256": "392193ab9ab78bfdec89655662f76c30cdd7caf78d5351f703acb413291684a2",
+      "self_contained_python": true,
+      "clean_install_smoke": "passed",
+      "live_google_generation": "not requested"
+    }
   },
   "hostApi": {
     "passed": 6,
@@ -92,6 +101,7 @@
     "managementKeyRequired": false,
     "googleAccounts": 0,
     "cloudProjectsCreated": 0,
-    "mediaGenerated": 0
+    "mediaGenerated": 0,
+    "runtimeHeadSha": "d8b0e01a0305088aae2b31b6ecb56707b159523a"
   }
 }
