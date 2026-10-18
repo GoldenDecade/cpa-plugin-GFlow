@@ -31,6 +31,7 @@ class UpstreamContractTest(unittest.TestCase):
         self.assertEqual(len(request),14)
         self.assertEqual(request[5],"BELUGA")
         self.assertEqual(request[12],"synthetic-session")
+        self.assertIn("11111111-1111-1111-1111-111111111111", json.dumps(request))
 
     def test_google_denial_is_a_failure(self):
         client = FlowClient(None)
@@ -40,6 +41,28 @@ class UpstreamContractTest(unittest.TestCase):
 
 
 class UpstreamTransportTest(unittest.IsolatedAsyncioTestCase):
+    async def test_image_generation_rpc_uses_explicit_bound_project(self):
+        client = FlowClient(None)
+        bound_project = "22222222-2222-2222-2222-222222222222"
+        client._resolve_flow_frontend_cookie_storage = AsyncMock(return_value="SID=synthetic")
+        client._get_recaptcha_token = AsyncMock(return_value=("recaptcha", "browser-1"))
+        client._call_flow_frontend_rpc = AsyncMock(return_value=[])
+        client._normalize_frontend_image_generation_response = lambda payload: {"media": []}
+        client._notify_browser_captcha_request_finished = AsyncMock()
+        result, _, _ = await client.generate_image(
+            at="synthetic-at",
+            project_id=bound_project,
+            prompt="synthetic",
+            model_name="BELUGA",
+            aspect_ratio="IMAGE_ASPECT_RATIO_LANDSCAPE",
+            token_id=7,
+            google_cookies="SID=synthetic",
+        )
+        self.assertEqual(result, {"media": []})
+        call = client._call_flow_frontend_rpc.await_args.kwargs
+        self.assertEqual(call["project_id"], bound_project)
+        self.assertIn(bound_project, json.dumps(call["argument"]))
+
     async def test_rpc_body_and_cookie_reach_upstream_transport_once(self):
         client=FlowClient(None)
         response=SimpleNamespace(status_code=200,text="synthetic-response")

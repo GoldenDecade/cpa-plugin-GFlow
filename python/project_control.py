@@ -143,13 +143,25 @@ class BoundTokenManager:
     def __getattr__(self, name):
         return getattr(self.manager, name)
 
+    async def resolve_project_id(self, token_id):
+        """Resolve the request project without falling back from a CutFlow binding."""
+        binding = CURRENT_BINDING.get()
+        if binding is None:
+            return await self.manager.ensure_project_exists(token_id)
+        if binding["token_id"] != token_id:
+            raise ProjectControlError("project_account_conflict", "bound account does not own this project", 409)
+        project_id = str(binding.get("flow_project_id") or "").strip()
+        if not project_id:
+            raise ProjectControlError("project_not_ready", "bound Flow project is not ready", 409)
+        return project_id
+
     async def ensure_project_exists(self, token_id):
         binding = CURRENT_BINDING.get()
         if binding is None:
             return await self.manager.ensure_project_exists(token_id)
         if binding["token_id"] != token_id:
             raise ProjectControlError("project_account_conflict", "生成账号与项目归属不一致", 409)
-        return binding["flow_project_id"]
+        return await self.resolve_project_id(token_id)
 
     async def ensure_valid_token(self, token):
         result = await self.manager.ensure_valid_token(token)

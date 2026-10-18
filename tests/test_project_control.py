@@ -264,6 +264,28 @@ class ProjectPersistenceTest(unittest.IsolatedAsyncioTestCase):
             CURRENT_BINDING.reset(context)
         self.assertEqual(await BoundTokenManager(original_manager).ensure_project_exists(self.token.id), "pool")
 
+    async def test_bound_project_resolution_never_reads_token_current_project(self):
+        value, _ = await self.create()
+        row = await self.control.binding_from_request({
+            "gflow_workspace_id": value["workspaceId"],
+            "gflow_project_id": self.remote_id,
+            "gflow_instance_id": self.control.instance_id,
+        })
+        # The token may still point to an older shared-pool project. A bound
+        # generation must keep using the persisted dedicated Flow project.
+        self.token.current_project_id = str(uuid.uuid4())
+        manager = SimpleNamespace(
+            ensure_project_exists=AsyncMock(return_value=self.token.current_project_id),
+        )
+        context = CURRENT_BINDING.set(row)
+        try:
+            bound = BoundTokenManager(manager)
+            self.assertEqual(await bound.resolve_project_id(self.token.id), self.remote_id)
+            self.assertEqual(await bound.ensure_project_exists(self.token.id), self.remote_id)
+            manager.ensure_project_exists.assert_not_awaited()
+        finally:
+            CURRENT_BINDING.reset(context)
+
     async def test_bound_proxy_rejects_tier_and_route_without_fallback(self):
         value, _ = await self.create()
         row = (await self.control._rows("workspace_id=?", (value["workspaceId"],)))[0]
