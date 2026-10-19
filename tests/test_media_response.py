@@ -20,8 +20,12 @@ class MediaResponseRegression(unittest.TestCase):
         self.root = Path(self.temporary.name)
 
     def test_cached_images_and_video_are_delivered_without_management_credentials(self):
-        for extension, mime in [("jpg", "image/jpeg"), ("mp4", "video/mp4")]:
-            filename = "a" * 32 + "." + extension
+        for extension, suffix, mime in [
+            ("jpg", "", "image/jpeg"), ("jpg", "_2K", "image/jpeg"),
+            ("png", "_4K", "image/png"), ("mp4", "", "video/mp4"),
+            ("mp4", "_4K", "video/mp4"),
+        ]:
+            filename = "a" * 32 + suffix + "." + extension
             body = b"synthetic-media"
             (self.root / filename).write_bytes(body)
             expected = "data:" + mime + ";base64," + base64.b64encode(body).decode()
@@ -36,6 +40,8 @@ class MediaResponseRegression(unittest.TestCase):
         for url in [
             "/v0/resource/plugins/gflow/tmp/control-fake.json",
             "/v0/resource/plugins/gflow/tmp/../../secret.jpg",
+            "/v0/resource/plugins/gflow/tmp/" + "a" * 32 + "_1K.jpg",
+            "/v0/resource/plugins/gflow/tmp/" + "a" * 32 + "_2K_extra.jpg",
             "https://other.example/v0/management/plugins/gflow/api/tmp/" + "a" * 32 + ".mp4",
         ]:
             self.assertEqual(module.inline_cached_images(url, self.root), url)

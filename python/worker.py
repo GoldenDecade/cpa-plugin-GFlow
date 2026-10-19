@@ -110,6 +110,7 @@ class GFlowService:
         from src.services.concurrency_manager import ConcurrencyManager
         from src.services.load_balancer import LoadBalancer
         from src.services.generation_handler import GenerationHandler
+        from generation_progress import GenerationProgressMixin
         from src.api import routes
 
         self.db = Database(self.db_path)
@@ -135,7 +136,10 @@ class GFlowService:
         self.token_manager = TokenManager(PoolDatabase(self.db), self.flow_client)
         self.concurrency_manager = ConcurrencyManager()
         self.load_balancer = LoadBalancer(self.token_manager, self.concurrency_manager)
-        self.generation_handler = GenerationHandler(
+        class PluginGenerationHandler(GenerationProgressMixin, GenerationHandler):
+            pass
+
+        self.generation_handler = PluginGenerationHandler(
             self.flow_client,
             BoundTokenManager(self.token_manager),
             BoundLoadBalancer(self.load_balancer, self.token_manager),
@@ -405,7 +409,10 @@ class GFlowService:
             if any(field in params for field in ("gflow_workspace_id", "gflow_project_id", "gflow_instance_id")):
                 binding = await self.project_control.binding_from_request(params)
             context = CURRENT_BINDING.set(binding)
-            await self._handle_chat_completion(req_id, params)
+            from generation_progress import progress_scope
+            emit = (lambda chunk: self.send_line({"id": req_id, "stream": True, "chunk": chunk})) if params.get("stream") else None
+            with progress_scope(emit):
+                await self._handle_chat_completion(req_id, params)
         except ProjectControlError as error:
             self.send_line({"id": req_id, "done": True, "error": error.payload()})
         finally:

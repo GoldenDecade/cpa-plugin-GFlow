@@ -610,7 +610,8 @@ fn write_error(response: *mut CliproxyBuffer, code: &str, message: &str, status:
 
 fn cached_media_name(filename: &str) -> Option<&str> {
     let (stem, extension) = filename.rsplit_once('.')?;
-    if stem.len() != 32 || !stem.bytes().all(|c| c.is_ascii_hexdigit())
+    let id = stem.strip_suffix("_2K").or_else(|| stem.strip_suffix("_4K")).unwrap_or(stem);
+    if id.len() != 32 || !id.bytes().all(|c| c.is_ascii_hexdigit())
         || !matches!(extension, "png" | "jpg" | "jpeg" | "webp" | "mp4" | "webm" | "mov") {
         return None;
     }
@@ -623,7 +624,13 @@ mod cached_media_regressions {
     #[test]
     fn cached_media_route_rejects_paths_and_control_files() {
         assert!(cached_media_name("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.mp4").is_some());
+        assert!(cached_media_name("c14431778c5ba20a07c61802a12dfc71_2K.jpg").is_some());
+        assert!(cached_media_name("c14431778c5ba20a07c61802a12dfc71_4K.png").is_some());
+        assert!(cached_media_name("c14431778c5ba20a07c61802a12dfc71_4K.mp4").is_some());
         assert!(cached_media_name("../aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.jpg").is_none());
+        assert!(cached_media_name("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa_1K.jpg").is_none());
+        assert!(cached_media_name("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa_2K_more.jpg").is_none());
+        assert!(cached_media_name("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa_2k.jpg").is_none());
         assert!(cached_media_name("control-00000000-0000-0000-0000-000000000001-0.json").is_none());
     }
 }

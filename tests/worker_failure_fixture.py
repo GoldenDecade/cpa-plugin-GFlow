@@ -30,6 +30,13 @@ for line in sys.stdin:
         continue
     if request.get("cmd") == "stall":
         continue
+    if request["params"].get("progress_fixture"):
+        progress = {"stage": "image_generated", "percent": 72, "basis": "stage"}
+        chunk = "data: " + json.dumps({"gflow_progress": progress,
+            "choices": [{"index": 0, "delta": {"gflow_progress": progress}, "finish_reason": None}]}) + "\n\n"
+        send({"id": request["id"], "stream": True, "chunk": chunk})
+        send({"id": request["id"], "stream": True, "done": True})
+        continue
     if request["params"].get("hold_for_release"):
         send({"id": request["id"], "chunk": "started"})
         threading.Thread(target=finish_stream, args=(request,), daemon=True).start()

@@ -302,6 +302,22 @@ mod tests {
     }
 
     #[test]
+    fn progress_metadata_survives_native_stream_transport() {
+        let worker = fixture();
+        let mut chunks = Vec::new();
+        worker.execute_stream(serde_json::json!({"stream": true, "progress_fixture": true}), |chunk| {
+            chunks.push(chunk.to_string());
+            Ok(())
+        }).unwrap();
+        assert_eq!(chunks.len(), 1);
+        let value: serde_json::Value = serde_json::from_str(chunks[0].strip_prefix("data: ").unwrap().trim()).unwrap();
+        assert_eq!(value["gflow_progress"], serde_json::json!({"stage":"image_generated", "percent":72, "basis":"stage"}));
+        assert_eq!(value["choices"][0]["delta"]["gflow_progress"], value["gflow_progress"]);
+        assert!(value["choices"][0]["delta"].get("content").is_none());
+        worker.shutdown();
+    }
+
+    #[test]
     fn management_status_is_not_blocked_by_a_stream() {
         let worker = fixture();
         let streaming = worker.clone();

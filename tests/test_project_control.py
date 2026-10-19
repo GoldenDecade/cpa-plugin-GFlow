@@ -71,6 +71,8 @@ class ControlProtocolTest(unittest.TestCase):
         self.assertEqual(len(models), 7)
         self.assertEqual(models[0]["imageSizes"], ["1K", "2K", "4K"])
         self.assertEqual(models[3]["durations"], [4, 6, 8, 10])
+        pro_models = model_capabilities([SimpleNamespace(user_paygate_tier="PAYGATE_TIER_ONE")])
+        self.assertEqual(pro_models[0]["imageSizes"], ["1K", "2K"])
         self.assertEqual(model_capabilities()[0]["imageSizes"], ["1K"])
 
 

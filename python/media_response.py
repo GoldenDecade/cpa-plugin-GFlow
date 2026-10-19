@@ -5,7 +5,7 @@ import re
 
 CACHE_MEDIA = re.compile(
     r"(?<![A-Za-z0-9/.:])/v0/(?:resource|management)/plugins/gflow(?:/api)?/tmp/"
-    r"([a-f0-9]{32}\.(?:png|jpg|jpeg|webp|mp4|webm|mov))(?=$|[\s\"'<>\)\\])"
+    r"([a-f0-9]{32}(?:_(?:2K|4K))?\.(?:png|jpg|jpeg|webp|mp4|webm|mov))(?=$|[\s\"'<>\)\\])"
 )
 MEDIA_TYPES = {
     ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
