@@ -469,13 +469,13 @@ class GFlowService:
                         # An error inside a normal SSE chunk is counted as success by the host.
                         self.send_line({"id": req_id, "done": True, "error": error})
                         return
-                    from media_response import inline_cached_images
-                    chunk = inline_cached_images(chunk, self.tmp_dir)
-                    self.send_line({
-                        "id": req_id,
-                        "stream": True,
-                        "chunk": chunk,
-                    })
+                    from media_response import stream_cached_media
+                    for output_chunk in stream_cached_media(chunk, self.tmp_dir):
+                        self.send_line({
+                            "id": req_id,
+                            "stream": True,
+                            "chunk": output_chunk,
+                        })
                 self.send_line({
                     "id": req_id,
                     "stream": True,
