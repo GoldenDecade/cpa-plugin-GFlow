@@ -182,6 +182,7 @@ observability:
             with urllib.request.urlopen(request, timeout=30) as response:
                 assert response.status == 200
                 text = response.read().decode("utf-8")
+            summary["streamBodyBytes"] = len(text.encode("utf-8"))
             content = []
             for line in text.splitlines():
                 if line.startswith("data:") and line[5:].strip() != "[DONE]":
