@@ -1,3 +1,9 @@
+# GFlow v0.1.17
+
+- 修复 CPA 宿主流背压死锁：executor 先返回流响应，再在后台发出阶段与最终媒体。
+- 保留标准 OpenAI 媒体响应，撤回未协商的自定义分片；兼容 CutFlow 0.6.1。
+- 阶段事件包含标准空 content 字段。
+
 # GFlow v0.1.16
 
 - 修复大图流式回传：2K/4K 缓存媒体使用受限分片事件重组，避免单个大 data URI 阻塞 CutFlow native stream。
