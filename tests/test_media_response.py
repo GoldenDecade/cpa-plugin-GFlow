@@ -68,6 +68,8 @@ class MediaResponseRegression(unittest.TestCase):
         self.assertGreater(len(chunks), 2)
         self.assertTrue(all(len(chunk.encode()) < 100_000 for chunk in chunks))
         self.assertTrue(all('gflow_media' in chunk for chunk in chunks[:-1]))
+        self.assertEqual([module.json.loads(chunk[6:].strip())['gflow_media']['seq'] for chunk in chunks[:-1]], list(range(len(chunks) - 1)))
+        self.assertEqual(module.json.loads(chunks[0][6:].strip())['gflow_media']['size'], len(body))
         self.assertNotIn(filename, chunks[-1])
         self.assertNotIn('data:image', chunks[-1])
 

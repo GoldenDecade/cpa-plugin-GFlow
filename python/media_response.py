@@ -1,4 +1,6 @@
 import base64
+import hashlib
+import json
 from pathlib import Path
 import re
 
@@ -14,7 +16,7 @@ MEDIA_TYPES = {
 }
 MAX_INLINE_BYTES = 128 * 1024 * 1024
 STREAM_INLINE_BYTES = 256 * 1024
-STREAM_CHUNK_BYTES = 48 * 1024
+STREAM_CHUNK_BYTES = 24 * 1024
 
 
 def _cached_file(root, filename):
@@ -24,16 +26,21 @@ def _cached_file(root, filename):
     return path
 
 
-def _media_event(filename, mime, chunk="", done=False):
-    import json
+def _media_event(filename, mime, chunk="", seq=0, total=0, size=0, digest="", done=False):
+    media = {
+        "id": filename,
+        "mime": mime,
+        "encoding": "base64",
+        "chunk": chunk,
+        "seq": seq,
+        "total": total,
+        "size": size,
+        "sha256": digest,
+        "done": done,
+    }
     return "data: " + json.dumps({
-        "gflow_media": {
-            "id": filename,
-            "mime": mime,
-            "encoding": "base64",
-            "chunk": chunk,
-            "done": done,
-        }
+        "gflow_media": media,
+        "choices": [{"index": 0, "delta": {"content": "", "gflow_media": media}, "finish_reason": None}],
     }, ensure_ascii=False) + "\n\n"
 
 
@@ -80,15 +87,18 @@ def stream_cached_media(value, cache_dir):
         size = path.stat().st_size
         if size > MAX_INLINE_BYTES:
             raise ValueError("Generated media exceeds the 128 MiB inline limit; retrieve the cached file through the authenticated GFlow media management API")
-        if size <= STREAM_INLINE_BYTES:
+        if size <= STREAM_INLINE_BYTES or MEDIA_TYPES[path.suffix].startswith("video/"):
             data = "data:" + MEDIA_TYPES[path.suffix] + ";base64," + base64.b64encode(path.read_bytes()).decode("ascii")
             memo[filename] = (data, [])
             return data
         raw = path.read_bytes()
         encoded = base64.b64encode(raw).decode("ascii")
-        events = [_media_event(filename, MEDIA_TYPES[path.suffix], encoded[i:i + STREAM_CHUNK_BYTES * 4 // 3])
-                  for i in range(0, len(encoded), STREAM_CHUNK_BYTES * 4 // 3)]
-        events.append(_media_event(filename, MEDIA_TYPES[path.suffix], done=True))
+        step = STREAM_CHUNK_BYTES * 4 // 3
+        chunks = [encoded[i:i + step] for i in range(0, len(encoded), step)]
+        digest = hashlib.sha256(raw).hexdigest()
+        events = [_media_event(filename, MEDIA_TYPES[path.suffix], chunk, index, len(chunks), len(raw), digest)
+                  for index, chunk in enumerate(chunks)]
+        events.append(_media_event(filename, MEDIA_TYPES[path.suffix], seq=len(chunks), total=len(chunks), size=len(raw), digest=digest, done=True))
         marker = "gflow-media-ref:" + filename
         memo[filename] = (marker, events)
         large[filename] = events
