@@ -77,7 +77,37 @@ class ManagementDispatcherTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(events[2], {"id": "probe", "done": True, "result": result})
         self.assertEqual(sum(event.get("done") is True for event in events), 1)
         self.assertTrue(all(event["id"] == "probe" for event in events))
-        service.handle_project_control.assert_awaited_once_with(params)
+        service.handle_project_control.assert_awaited_once_with({**params, "stream": False})
+        service._handle_chat_completion.assert_not_called()
+        await dispatcher.shutdown()
+
+    async def test_stream_control_runs_real_protocol_parser_without_mutating_input(self):
+        saved_stdout = sys.stdout
+        try:
+            from worker import GFlowService
+        finally:
+            sys.stdout = saved_stdout
+        from project_control import parse_control_request
+        service = GFlowService.__new__(GFlowService)
+        service.initialize = AsyncMock()
+        payload = {"version": 1, "op": "capabilities",
+                   "workspaceId": "00000000-0000-4000-8000-000000000001"}
+        service.project_control = SimpleNamespace(
+            instance_id="fixture-instance", handle=AsyncMock(return_value={"accepted": True}))
+        service._handle_chat_completion = AsyncMock()
+        events = []
+        service.send_line = events.append
+        dispatcher = ManagementDispatcher(service)
+        params = {"model": "gflow-project-control", "stream": True,
+                  "messages": [{"role": "user", "content": json.dumps(payload)}]}
+        dispatcher.submit("probe", "project_control", params)
+        await asyncio.wait_for(asyncio.gather(*list(dispatcher.tasks)), 1)
+        chunk = json.loads(events[0]["chunk"].removeprefix("data: ").strip())
+        self.assertEqual(json.loads(chunk["choices"][0]["delta"]["content"]), {"accepted": True})
+        service.project_control.handle.assert_awaited_once_with(
+            parse_control_request({**params, "stream": False}))
+        self.assertIs(params["stream"], True)
+        self.assertEqual(sum(event.get("done") is True for event in events), 1)
         service._handle_chat_completion.assert_not_called()
         await dispatcher.shutdown()
 

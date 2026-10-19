@@ -183,12 +183,18 @@ observability:
                 assert response.status == 200
                 text = response.read().decode("utf-8")
             summary["streamBodyBytes"] = len(text.encode("utf-8"))
+            assert text.count("data: [DONE]") == 1, "宿主应只输出一个流结束标记"
+            assert "data: data:" not in text, "SSE 被重复封装"
             content = []
+            finished = False
             for line in text.splitlines():
                 if line.startswith("data:") and line[5:].strip() != "[DONE]":
                     chunk = json.loads(line[5:].strip())
-                    content.append(chunk.get("choices", [{}])[0].get("delta", {}).get("content", ""))
+                    choices = chunk.get("choices", [{}])
+                    content.append(choices[0].get("delta", {}).get("content", ""))
+                    finished = finished or any(choice.get("finish_reason") for choice in choices)
             control = json.loads("".join(content))
+            assert "error" not in control and finished, control
             assert control["workspaceId"] == workspace and control["instanceId"] == first_instance
             summary["streamControlSeconds"] = round(time.monotonic() - began, 3)
             summary["checks"]["real_host_stream_control"] = "passed"

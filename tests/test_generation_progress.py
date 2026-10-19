@@ -61,6 +61,8 @@ class ProgressTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(events[1]["chunk"], "data: [DONE]\n\n")
         self.assertTrue(events[-1]["done"])
         worker._handle_chat_completion.assert_not_called()
+        worker.handle_project_control.assert_awaited_once_with(
+            {"model": "gflow-project-control", "stream": False})
 
     async def test_callbacks_emit_stage_metadata_without_credentials_or_media_text(self):
         handler = Handler()

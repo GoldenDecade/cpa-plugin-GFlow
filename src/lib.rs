@@ -427,15 +427,80 @@ fn handle_executor_stream(req: &[u8]) -> Result<Vec<u8>, String> {
     Ok(response)
 }
 
+// The worker produces SSE text, while host.stream.emit takes the JSON data
+// payload and the host adds SSE framing. Keep these boundaries separate so a
+// downstream client receives one data: prefix and one host completion marker.
+#[derive(Default)]
+struct WorkerSseBridge {
+    line: String,
+    data: Vec<String>,
+    completed: bool,
+}
+
+impl WorkerSseBridge {
+    fn push<F>(&mut self, mut chunk: &str, emit: &mut F) -> Result<(), String>
+    where F: FnMut(&str) -> Result<(), String> {
+        while let Some(end) = chunk.find('\n') {
+            self.line.push_str(&chunk[..end]);
+            let line = std::mem::take(&mut self.line);
+            self.consume_line(line.strip_suffix('\r').unwrap_or(&line), emit)?;
+            chunk = &chunk[end + 1..];
+        }
+        self.line.push_str(chunk);
+        Ok(())
+    }
+
+    fn finish<F>(&mut self, emit: &mut F) -> Result<(), String>
+    where F: FnMut(&str) -> Result<(), String> {
+        if !self.line.is_empty() {
+            let line = std::mem::take(&mut self.line);
+            self.consume_line(line.strip_suffix('\r').unwrap_or(&line), emit)?;
+        }
+        self.dispatch(emit)
+    }
+
+    fn consume_line<F>(&mut self, line: &str, emit: &mut F) -> Result<(), String>
+    where F: FnMut(&str) -> Result<(), String> {
+        if line.is_empty() { return self.dispatch(emit); }
+        if self.completed || line.starts_with(':') { return Ok(()); }
+        if let Some(value) = line.strip_prefix("data:") {
+            self.data.push(value.strip_prefix(' ').unwrap_or(value).to_string());
+        }
+        Ok(())
+    }
+
+    fn dispatch<F>(&mut self, emit: &mut F) -> Result<(), String>
+    where F: FnMut(&str) -> Result<(), String> {
+        if self.data.is_empty() { return Ok(()); }
+        let data = std::mem::take(&mut self.data).join("\n");
+        if data.trim() == "[DONE]" {
+            // The host closes the stream and supplies its own [DONE].
+            self.completed = true;
+            return Ok(());
+        }
+        if data.trim().is_empty() { return Ok(()); }
+        let event = serde_json::from_str::<serde_json::Value>(&data)
+            .map_err(|_| "GFlow worker returned an invalid SSE JSON event".to_string())?;
+        // Host framing prefixes only the first line, so compact valid multiline
+        // SSE JSON before forwarding. String contents and all fields survive.
+        let payload = serde_json::to_string(&event)
+            .map_err(|_| "GFlow worker SSE JSON encoding failed".to_string())?;
+        emit(&payload)
+    }
+}
+
 fn run_executor_stream(worker: WorkerManager, stream_id: String, body: serde_json::Value) {
     use base64::Engine;
     let stopping = stream_threads().lock().map(|streams| streams.stopping).unwrap_or(true);
     let result = if stopping { Err("GFlow plugin is shutting down".to_string()) } else {
-        worker.execute_stream(body, |chunk| {
+        let mut bridge = WorkerSseBridge::default();
+        let mut emit = |payload: &str| {
             let request = serde_json::json!({"stream_id":stream_id,
-                "payload":base64::engine::general_purpose::STANDARD.encode(chunk.as_bytes())});
+                "payload":base64::engine::general_purpose::STANDARD.encode(payload.as_bytes())});
             host_stream_callback("host.stream.emit", &request)
-        })
+        };
+        worker.execute_stream(body, |chunk| bridge.push(chunk, &mut emit))
+            .and_then(|_| bridge.finish(&mut emit))
     };
     if let Err(error) = close_host_stream(&stream_id, result.as_ref().err().map(String::as_str).unwrap_or("")) {
         eprintln!("[GFlow] {error}");
@@ -794,6 +859,9 @@ mod stream_abi_regressions {
         emit_entered: bool,
         emits: usize,
         media_bytes: usize,
+        invalid_payloads: usize,
+        reasoning_events: usize,
+        finish_events: usize,
         closes: Vec<String>,
         reject_emit: bool,
         reject_close: bool,
@@ -837,6 +905,12 @@ mod stream_abi_regressions {
                     .and_then(|payload| base64::engine::general_purpose::STANDARD.decode(payload).ok()) {
                     Some(bytes) => bytes, None => return 1,
                 };
+                let event: serde_json::Value = match serde_json::from_slice(&bytes) {
+                    Ok(value) => value,
+                    Err(_) => { state.invalid_payloads += 1; return 1; }
+                };
+                if event["choices"][0]["delta"].get("reasoning_content").is_some() { state.reasoning_events += 1; }
+                if event["choices"][0]["finish_reason"].as_str() == Some("stop") { state.finish_events += 1; }
                 if bytes.len() > 1024 * 1024 { state.media_bytes = bytes.len(); }
                 !state.cancelled && !state.reject_emit
             }
@@ -930,6 +1004,9 @@ mod stream_abi_regressions {
         let state = host.state.lock().unwrap();
         let emits = state.emits;
         let media_bytes = state.media_bytes;
+        let invalid_payloads = state.invalid_payloads;
+        let reasoning_events = state.reasoning_events;
+        let finish_events = state.finish_events;
         let clean_close = state.closes.first().is_some_and(String::is_empty);
         drop(state);
         unsafe { api.shutdown.unwrap()(); }
@@ -939,6 +1016,9 @@ mod stream_abi_regressions {
         assert_eq!(response["result"]["headers"]["content-type"][0], "text/event-stream");
         assert!(closed);
         assert_eq!(emits, 49);
+        assert_eq!(invalid_payloads, 0, "host emit must contain JSON without SSE data: framing or [DONE]");
+        assert_eq!(reasoning_events, 48);
+        assert_eq!(finish_events, 1, "host completion requires the original finish_reason");
         assert!(media_bytes > 5 * 1024 * 1024);
         assert!(clean_close);
         assert!(stream_threads().lock().unwrap().tasks.is_empty());
@@ -989,6 +1069,47 @@ mod stream_abi_regressions {
         std::thread::sleep(Duration::from_millis(30));
         let state = host.state.lock().unwrap();
         assert_eq!((state.emits, state.closes.len()), callbacks);
+    }
+
+    #[test]
+    fn worker_sse_events_are_unframed_once_without_losing_progress_or_reasoning() {
+        let mut bridge = WorkerSseBridge::default();
+        let mut payloads = Vec::new();
+        let mut emit = |payload: &str| { payloads.push(payload.to_string()); Ok(()) };
+        let reasoning = r#"{"choices":[{"delta":{"reasoning_content":"stage"}}]}"#;
+        let progress = r#"{"gflow_progress":{"stage":"image_generated","percent":72},"choices":[{"delta":{"content":""}}]}"#;
+        // Multiple events in one worker chunk, CRLF, comments, empty events,
+        // metadata lines, multiline data and a split data: prefix are valid.
+        bridge.push(&format!(": keepalive\r\n\r\ndata: {reasoning}\r\n\r\n\r\nevent: update\r\nda"), &mut emit).unwrap();
+        bridge.push(&format!("ta: {progress}\r\n\r\ndata: {{\ndata: \"choices\": []}}\n\n"), &mut emit).unwrap();
+        bridge.push("data: [DO", &mut emit).unwrap();
+        bridge.push("NE]\n\ndata: {\"ignored_after_done\":true}\n\n", &mut emit).unwrap();
+        bridge.finish(&mut emit).unwrap();
+        drop(emit);
+        assert_eq!(payloads.len(), 3);
+        assert_eq!(serde_json::from_str::<serde_json::Value>(&payloads[0]).unwrap(), serde_json::from_str::<serde_json::Value>(reasoning).unwrap());
+        assert_eq!(serde_json::from_str::<serde_json::Value>(&payloads[1]).unwrap(), serde_json::from_str::<serde_json::Value>(progress).unwrap());
+        for payload in &payloads {
+            serde_json::from_str::<serde_json::Value>(payload).unwrap();
+            assert!(!payload.contains('\n'), "host adds a single data: prefix");
+        }
+        assert_eq!(serde_json::from_str::<serde_json::Value>(&payloads[1]).unwrap()["gflow_progress"]["percent"], 72);
+        let wire = format!("{}data: [DONE]\n\n", payloads.iter().map(|payload| format!("data: {payload}\n\n")).collect::<String>());
+        assert!(!wire.contains("data: data:"));
+        assert_eq!(wire.matches("[DONE]").count(), 1);
+    }
+
+    #[test]
+    fn worker_sse_flushes_a_json_tail_and_rejects_invalid_data() {
+        let mut payloads = Vec::new();
+        let mut emit = |payload: &str| { payloads.push(payload.to_string()); Ok(()) };
+        let mut bridge = WorkerSseBridge::default();
+        bridge.push("data: {\"choices\":[]}", &mut emit).unwrap();
+        bridge.finish(&mut emit).unwrap();
+        drop(emit);
+        assert_eq!(payloads, vec![r#"{"choices":[]}"#]);
+        let mut invalid = WorkerSseBridge::default();
+        assert!(invalid.push("data: data: {}\n\n", &mut |_| Ok(())).unwrap_err().contains("invalid SSE JSON"));
     }
 
     #[test]

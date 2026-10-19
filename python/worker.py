@@ -401,7 +401,11 @@ class GFlowService:
         context = None
         try:
             if params.get("model") == CONTROL_MODEL:
-                result = await self.handle_project_control(params)
+                # The versioned control protocol is a nonstream operation;
+                # SSE is only its transport wrapper at the host boundary.
+                control_params = dict(params)
+                control_params["stream"] = False
+                result = await self.handle_project_control(control_params)
                 if params.get("stream"):
                     # Control probes use the same native stream boundary without
                     # starting a Google media request.
